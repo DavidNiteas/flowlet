@@ -1,0 +1,12 @@
+{
+  "name": "json_file_test",
+  "values": [
+    1,
+    2,
+    3
+  ],
+  "metadata": {
+    "key": "value",
+    "number": 42
+  }
+}

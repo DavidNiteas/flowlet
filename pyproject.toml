@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "flowlet"
+version = "0.0.0.dev"
+description = "A lightweight workflow, config, dispatcher, and parallel execution library."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+authors = [
+    { name = "David Niteas", email = "david.ql.d@foxmail.com" },
+]
+dependencies = [
+    "pydantic",
+    "typing-extensions",
+    "toml",
+    "msgpack",
+    "ray",
+    "tqdm",
+    "rich",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["flowlet"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+]
+
+[tool.ruff]
+line-length = 120
+src = ["flowlet", "tests"]
+exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "W", "I", "F", "UP", "PERF"]
+ignore = ["E741"]

@@ -1,0 +1,18 @@
+{
+  "method_name": "database",
+  "app_name": "MyApp",
+  "debug": true,
+  "configs": {
+    "database": {
+      "host": "json.host",
+      "port": 5432,
+      "username": "admin",
+      "password": "password"
+    },
+    "cache": {
+      "backend": "json_cache",
+      "ttl": 3600,
+      "max_size": 1000
+    }
+  }
+}
