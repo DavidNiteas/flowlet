@@ -6,7 +6,7 @@ from flowlet.config.base_config import BaseBranchConfig, BaseConfig
 from flowlet.config.config_container import BaseConfigContainer
 
 # 测试缓存目录
-CACHE_DIR = Path(__file__).parent.parent / "cache" / "flowlet" / "config"
+CACHE_DIR = Path(__file__).parent.parent / "cache" / "config"
 
 
 @pytest.fixture(scope="module", autouse=True)
