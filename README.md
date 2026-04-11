@@ -10,4 +10,4 @@
 - `ThreadParallelWorkflow` / `RayParallelWorkflow`
 - `Default` / `Placeholder` / `Emptyholder` / `Voidholder`
 
-更详细的说明见 [flowlet/flowlet.md](flowlet/flowlet.md)。
+更详细的说明见 [docs/flowlet.md](docs/flowlet.md)。

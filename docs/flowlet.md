@@ -25,7 +25,10 @@ Flowlet 架构
 │   │       ├── RayParallelWorkflow
 │   │       └── RayPoolCreatorWorkflow
 │   └── 类型注解工具
+│       ├── TypeKind (类型分类枚举)
+│       ├── classify_object (类型分类函数)
 │       ├── get_class_from_annotation
+│       ├── unwrap_type
 │       ├── is_subclass_in_annotation
 │       ├── extract_target_subclass_from_annotation
 │       └── is_instance_in_annotation
@@ -596,7 +599,46 @@ class DefaultProcessor(Kernel[DispatcherConfig, int]):
 
 ## 类型注解工具
 
-`flowlet.base.type_annotation` 模块提供类型注解处理工具函数。
+`flowlet.base.type_annotation` 模块提供类型注解处理工具函数，基于 `TypeKind` 分类系统实现。
+
+### TypeKind 类型分类
+
+`TypeKind` 枚举用于分类不同类型的对象：
+
+```python
+from flowlet.base.type_annotation import TypeKind, classify_object
+
+# 类型分类
+classify_object(int)                    # TypeKind.BARE_CLASS
+classify_object(list[str])              # TypeKind.GENERIC_ALIAS
+classify_object(int | str)              # TypeKind.UNION_TYPE
+classify_object(Any)                    # TypeKind.TYPING_FORM
+classify_object(123)                    # TypeKind.INSTANCE
+```
+
+**TypeKind 分类说明：**
+
+- `BARE_CLASS`：裸类（int, str, MyClass），纯净的类对象，可用于实例化
+- `GENERIC_ALIAS`：泛型别名（list[str], dict[int, str]），Python 3.9+
+- `UNION_TYPE`：联合类型（str | int, Optional[str]），Python 3.10+
+- `TYPING_FORM`：typing 特殊形式（Any, TypeVar, ForwardRef, NoReturn）
+- `INSTANCE`：实例值（123, "hello", []），已经创建的数据值
+- `UNKNOWN`：未知类型（如模块、函数等不好分类的）
+
+### classify_object
+
+对任意对象进行类型分类：
+
+```python
+from flowlet.base.type_annotation import classify_object, TypeKind
+
+# 检查各种类型
+classify_object(int) == TypeKind.BARE_CLASS           # True
+classify_object(list[str]) == TypeKind.GENERIC_ALIAS  # True
+classify_object(str | int) == TypeKind.UNION_TYPE     # True
+classify_object(Any) == TypeKind.TYPING_FORM          # True
+classify_object([1, 2, 3]) == TypeKind.INSTANCE       # True
+```
 
 ### get_class_from_annotation
 
@@ -616,6 +658,22 @@ get_class_from_annotation(Union[int, None])  # int
 # 普通类型
 get_class_from_annotation(str)  # str
 get_class_from_annotation(None)  # None
+```
+
+### unwrap_type
+
+将类型注解展开为基础类型的扁平列表：
+
+```python
+from flowlet.base.type_annotation import unwrap_type
+
+# 基本类型
+unwrap_type(int)  # [int]
+unwrap_type(list[str])  # [list]
+
+# Union 类型
+unwrap_type(str | int)  # [str, int]
+unwrap_type(list[str] | dict[int, bool])  # [list, dict]
 ```
 
 ### is_subclass_in_annotation
