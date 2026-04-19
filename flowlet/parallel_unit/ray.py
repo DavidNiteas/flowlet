@@ -6,6 +6,7 @@ from typing import Any
 
 import ray
 
+from ..base.progress import ProgressManager
 from ..executable_unit import Workflow
 from .config import ParallelConfig
 
@@ -71,8 +72,14 @@ class RayParallelWorkflow(Workflow):
 
     config: ParallelConfig = ParallelConfig()
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        *args,
+        progress_monitor: ProgressManager | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(*args, **kwargs)
+        self._progress_monitor = progress_monitor
 
         # 如果Ray未初始化，自动初始化
         if not ray.is_initialized():
@@ -170,8 +177,18 @@ class RayParallelWorkflow(Workflow):
         Returns:
             函数应用结果的列表
         """
-        futures = self.submit_many(func, iterable)
-        return self.gather(futures)
+        items = list(iterable)
+        monitor = self._progress_monitor
+        if monitor is not None:
+            monitor.register_task("map", "Mapping tasks", total=len(items))
+
+        futures = self.submit_many(func, items)
+        results = self.gather(futures)
+
+        if monitor is not None:
+            monitor.update_progress("map", current=len(items), status="completed")
+
+        return results
 
     def gather(self, futures: Iterable[ray.ObjectRef]) -> list[Any]:
         """批量拉取多个任务的结果。
@@ -186,16 +203,24 @@ class RayParallelWorkflow(Workflow):
         if not futures_list:
             return []
 
+        monitor = self._progress_monitor
+        if monitor is not None:
+            monitor.register_task("gather", "Gathering results", total=len(futures_list))
+
         # 收集结果
         try:
             if self.config.use_concurrent_io:
                 # 使用并发IO
                 results = ray.get(futures_list)
+                if monitor is not None:
+                    monitor.update_progress("gather", current=len(futures_list))
             else:
                 # 顺序拉取
                 results = []
-                for future in self._get_progress_bar(futures_list):
+                for i, future in enumerate(self._get_progress_bar(futures_list)):
                     results.append(ray.get(future))
+                    if monitor is not None:
+                        monitor.update_progress("gather", current=i + 1)
         except Exception as e:
             raise e
 
@@ -233,12 +258,19 @@ class RayParallelWorkflow(Workflow):
     def _get_progress_bar(self, iterable: Iterable) -> Iterable:
         """获取进度条迭代器。
 
+        若构造时传入了 progress_monitor 且正在显示，则不额外包装进度条，
+        由 ProgressManager 自身负责渲染。
+
         Args:
             iterable: 要迭代的对象
 
         Returns:
             带进度条的迭代器
         """
+        monitor = self._progress_monitor
+        if monitor is not None and monitor.is_displaying():
+            return iterable
+
         if not self.config.show_progress:
             return iterable
 

@@ -8,6 +8,7 @@ import ray
 # 设置环境变量以禁用Ray的警告
 os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
 
+from flowlet.base.progress import ProgressManager
 from flowlet.parallel_unit import (
     ParallelConfig,
     RayParallelWorkflow,
@@ -135,6 +136,12 @@ class TestParallelConfig:
         assert config2.show_progress is True
         assert config2.per_task_num_cpus == 2.0
 
+    def test_progress_monitor_not_in_config(self):
+        """测试 progress_monitor 不在 ParallelConfig 中。"""
+        config = ParallelConfig()
+        # progress_monitor 不应是 config 的字段
+        assert not hasattr(config, "progress_monitor") or getattr(config, "progress_monitor", None) is None
+
 
 # ==================== 测试2: ThreadParallelWorkflow ====================
 
@@ -223,6 +230,46 @@ class TestThreadParallelWorkflow:
         # 尝试在关闭后提交任务
         with pytest.raises(RuntimeError, match="Thread pool has been shutdown"):
             workflow.submit(test_func, 42)
+
+    def test_map_with_progress_monitor(self):
+        """测试 map 操作使用 ProgressManager 跟踪进度。"""
+        monitor = ProgressManager()
+        config = ParallelConfig()
+        workflow = ThreadParallelWorkflow(config, progress_monitor=monitor)
+
+        def test_func(x):
+            return x * 2
+
+        results = workflow.map(test_func, [1, 2, 3, 4, 5])
+        assert results == [2, 4, 6, 8, 10]
+
+        # 验证进度被记录
+        prog = monitor.get_progress("map")
+        assert prog is not None
+        assert prog.current == 5
+        assert prog.status == "completed"
+
+        workflow.shutdown()
+
+    def test_gather_with_progress_monitor(self):
+        """测试 gather 操作使用 ProgressManager 跟踪进度。"""
+        monitor = ProgressManager()
+        config = ParallelConfig()
+        workflow = ThreadParallelWorkflow(config, progress_monitor=monitor)
+
+        def test_func(x):
+            return x * 2
+
+        futures = workflow.submit_many(test_func, [1, 2, 3])
+        results = workflow.gather(futures)
+        assert results == [2, 4, 6]
+
+        # 验证 gather 进度被记录
+        prog = monitor.get_progress("gather")
+        assert prog is not None
+        assert prog.current == 3
+
+        workflow.shutdown()
 
 
 # ==================== 测试3: RayPoolCreatorWorkflow ====================
@@ -347,3 +394,39 @@ class TestRayParallelWorkflow:
         future = workflow.submit(test_func, 42)
         result = workflow.fetch(future)
         assert result == 84
+
+    def test_map_with_progress_monitor(self):
+        """测试 Ray map 操作使用 ProgressManager 跟踪进度。"""
+        _ensure_ray_available()
+        monitor = ProgressManager()
+        config = ParallelConfig()
+        workflow = RayParallelWorkflow(config, progress_monitor=monitor)
+
+        def test_func(x):
+            return x * 2
+
+        results = workflow.map(test_func, [1, 2, 3, 4, 5])
+        assert results == [2, 4, 6, 8, 10]
+
+        prog = monitor.get_progress("map")
+        assert prog is not None
+        assert prog.current == 5
+        assert prog.status == "completed"
+
+    def test_gather_with_progress_monitor(self):
+        """测试 Ray gather 操作使用 ProgressManager 跟踪进度。"""
+        _ensure_ray_available()
+        monitor = ProgressManager()
+        config = ParallelConfig()
+        workflow = RayParallelWorkflow(config, progress_monitor=monitor)
+
+        def test_func(x):
+            return x * 2
+
+        futures = workflow.submit_many(test_func, [1, 2, 3])
+        results = workflow.gather(futures)
+        assert results == [2, 4, 6]
+
+        prog = monitor.get_progress("gather")
+        assert prog is not None
+        assert prog.current == 3

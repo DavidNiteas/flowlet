@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from typing import Any
 
+from ..base.progress import ProgressManager
 from ..executable_unit import Workflow
 from .config import ParallelConfig
 
@@ -17,11 +18,17 @@ class ThreadParallelWorkflow(Workflow):
 
     config: ParallelConfig = ParallelConfig()
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        *args,
+        progress_monitor: ProgressManager | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(*args, **kwargs)
         # 线程池直接使用max_concurrent_tasks作为最大工作线程数
         self._pool = ThreadPoolExecutor(max_workers=self.config.max_concurrent_tasks)
         self._shutdown = False
+        self._progress_monitor = progress_monitor
 
     def __call__(self, func: Callable, *args, **kwargs) -> Future:
         """执行单个任务。
@@ -112,8 +119,16 @@ class ThreadParallelWorkflow(Workflow):
         if not futures_list:
             return []
 
+        monitor = self._progress_monitor
+        if monitor is not None:
+            monitor.register_task("gather", "Gathering results", total=len(futures_list))
+
         # 收集结果
-        results = [future.result() for future in self._get_progress_bar(futures_list)]
+        results = []
+        for i, future in enumerate(self._get_progress_bar(futures_list)):
+            results.append(future.result())
+            if monitor is not None:
+                monitor.update_progress("gather", current=i + 1)
         return results
 
     def map(self, func: Callable[[Any], Any], iterable: Iterable[Any]) -> list[Any]:
@@ -128,8 +143,18 @@ class ThreadParallelWorkflow(Workflow):
         Returns:
             函数应用结果的列表
         """
-        futures = self.submit_many(func, iterable)
-        return self.gather(futures)
+        items = list(iterable)
+        monitor = self._progress_monitor
+        if monitor is not None:
+            monitor.register_task("map", "Mapping tasks", total=len(items))
+
+        futures = self.submit_many(func, items)
+        results = self.gather(futures)
+
+        if monitor is not None:
+            monitor.update_progress("map", current=len(items), status="completed")
+
+        return results
 
     def wait(self, futures: Iterable[Future], timeout: float | None = None) -> None:
         """等待所有Future完成（原子操作：等待）。
@@ -156,12 +181,19 @@ class ThreadParallelWorkflow(Workflow):
     def _get_progress_bar(self, iterable: Iterable) -> Iterable:
         """获取进度条迭代器。
 
+        若构造时传入了 progress_monitor 且正在显示，则不额外包装进度条，
+        由 ProgressManager 自身负责渲染。
+
         Args:
             iterable: 要迭代的对象
 
         Returns:
             带进度条的迭代器
         """
+        monitor = self._progress_monitor
+        if monitor is not None and monitor.is_displaying():
+            return iterable
+
         if not self.config.show_progress:
             return iterable
 
