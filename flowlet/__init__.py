@@ -16,6 +16,7 @@ from .config import BaseBranchConfig, BaseConfig, BaseConfigContainer, ConfigMap
 from .dispatcher import Dispatcher
 from .executable_unit import ExecutableUnit, Kernel, Workflow
 from .parallel_unit import ParallelConfig, RayParallelWorkflow, RayPoolCreatorWorkflow, ThreadParallelWorkflow
+from .strategy import BaseStrategy, MountPoint, mount
 
 __all__ = [
     "BaseHolder",
@@ -36,4 +37,7 @@ __all__ = [
     "ThreadParallelWorkflow",
     "RayParallelWorkflow",
     "RayPoolCreatorWorkflow",
+    "BaseStrategy",
+    "MountPoint",
+    "mount",
 ]

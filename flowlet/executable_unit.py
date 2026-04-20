@@ -7,6 +7,7 @@ from typing import Any, Generic, TypeVar
 
 from typing_extensions import Self
 
+from .base.dual_accessor import dual_method
 from .base.sentinel import Default
 from .config import BaseBranchConfig, BaseConfig, BaseConfigContainer
 
@@ -44,7 +45,7 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
         Returns:
             ConfigT: 构造的配置实例
         """
-        config = copy.copy(cls.config)
+        config = copy.deepcopy(cls.config)
         config.update(*args, **kwargs)
         return config
 
@@ -74,37 +75,46 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
         if importlib.util.find_spec('ray') is not None:
             self._ray_available = True
 
-    @classmethod
-    def run(
-        cls,
-        *args,
-        config: ConfigT | Default = Default(),
-        **kwargs,
-    ) -> ResultT:
-        """即时执行可执行单元。
+    @dual_method
+    def run(self, *args, **kwargs) -> ResultT:
+        """实例调用模式。
 
-        构造一个实例并执行其全套调用流程，返回结果。
-        此方法不是强制重写的，但推荐在子类中重写以提供更好的参数类型注释与函数注释。
+        保留当前实例的配置；如果 ``kwargs`` 非空，先深拷贝实例并
+        用 ``kwargs`` 覆盖对应配置字段，再执行。
 
         Args:
             *args: 传递给 __call__ 的位置参数
+            **kwargs: 配置覆盖参数
+
+        Returns:
+            Any: 执行结果
+        """
+        if kwargs:
+            unit = copy.deepcopy(self)
+            unit.config = copy.deepcopy(self.config)
+            unit.config.update(**kwargs)
+        else:
+            unit = self
+        bound_instance = unit.bind_input(*args)
+        return bound_instance.execute()
+
+    @run.classmode
+    def run(cls, *args, config: ConfigT | Default = Default(), **kwargs) -> ResultT:
+        """类调用模式。
+
+        基于 ``config`` 与 ``kwargs`` 构造新实例，直接绑定输入并执行。
+        不经过实例的 ``run``，以避免触发子类可能存在的 ``@classmethod``
+        覆盖导致的递归。
+
+        Args:
+            *args: 传递给 __call__ 的位置参数
+            config: 显式传入的配置对象
             **kwargs: 传递给配置构造的参数
 
         Returns:
             Any: 执行结果
-
-        Example:
-            # 基本用法
-            result = MyExecutableUnit.run(input_data)
-
-            # 带配置参数
-            result = MyExecutableUnit.run(
-                input_data,
-                param1="value1",
-                param2="value2"
-            )
         """
-        instance = cls(config, **kwargs)
+        instance:ExecutableUnit = cls(config, **kwargs)
         bound_instance = instance.bind_input(*args)
         return bound_instance.execute()
 
