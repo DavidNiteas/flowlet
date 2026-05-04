@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import uuid
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -75,11 +76,13 @@ class RayParallelWorkflow(Workflow):
     def __init__(
         self,
         *args,
+        name: str | None = None,
         progress_monitor: ProgressManager | None = None,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._progress_monitor = progress_monitor
+        self._name = name
 
         # 如果Ray未初始化，自动初始化
         if not ray.is_initialized():
@@ -165,6 +168,15 @@ class RayParallelWorkflow(Workflow):
 
         return futures
 
+    def _generate_task_id(self, func_name: str) -> str:
+        """生成任务标识，格式为 name.func.short_uid。"""
+        name = self._name
+        if name is None:
+            info = ProgressManager.get_caller_info(3)
+            name = info[2] if len(info) > 2 else "RayParallelWorkflow"
+        short_uid = uuid.uuid4().hex[:4]
+        return f"{name}.{func_name}.{short_uid}"
+
     def map(self, func: Callable[[Any], Any], iterable: Iterable[Any]) -> list[Any]:
         """将函数应用于可迭代对象的每个元素（同步）。
 
@@ -178,23 +190,38 @@ class RayParallelWorkflow(Workflow):
             函数应用结果的列表
         """
         items = list(iterable)
+        if not items:
+            return []
+
+        # 任务数低于阈值时直接串行执行，避免分布式调度开销
+        if len(items) < self.config.parallel_threshold:
+            return [func(item) for item in items]
+
         monitor = self._progress_monitor
+        task_id = None
         if monitor is not None:
-            monitor.register_task("map", "Mapping tasks", total=len(items))
+            func_name = ProgressManager.get_caller_info(2)[1]
+            task_id = self._generate_task_id(func_name)
+            monitor.register_task(task_id, "Mapping tasks", total=len(items))
 
         futures = self.submit_many(func, items)
         results = self.gather(futures)
 
-        if monitor is not None:
-            monitor.update_progress("map", current=len(items), status="completed")
+        if monitor is not None and task_id is not None:
+            monitor.update_progress(task_id, current=len(items), status="completed")
 
         return results
 
-    def gather(self, futures: Iterable[ray.ObjectRef]) -> list[Any]:
+    def gather(
+        self,
+        futures: Iterable[ray.ObjectRef],
+        description: str = "Gathering results",
+    ) -> list[Any]:
         """批量拉取多个任务的结果。
 
         Args:
             futures: 要拉取的ObjectRef列表
+            description: 进度任务描述文本。
 
         Returns:
             任务执行结果列表
@@ -204,23 +231,26 @@ class RayParallelWorkflow(Workflow):
             return []
 
         monitor = self._progress_monitor
+        task_id = None
         if monitor is not None:
-            monitor.register_task("gather", "Gathering results", total=len(futures_list))
+            func_name = ProgressManager.get_caller_info(2)[1]
+            task_id = self._generate_task_id(func_name)
+            monitor.register_task(task_id, description, total=len(futures_list))
 
         # 收集结果
         try:
             if self.config.use_concurrent_io:
                 # 使用并发IO
                 results = ray.get(futures_list)
-                if monitor is not None:
-                    monitor.update_progress("gather", current=len(futures_list))
+                if monitor is not None and task_id is not None:
+                    monitor.update_progress(task_id, current=len(futures_list))
             else:
                 # 顺序拉取
                 results = []
                 for i, future in enumerate(self._get_progress_bar(futures_list)):
                     results.append(ray.get(future))
-                    if monitor is not None:
-                        monitor.update_progress("gather", current=i + 1)
+                    if monitor is not None and task_id is not None:
+                        monitor.update_progress(task_id, current=i + 1)
         except Exception as e:
             raise e
 

@@ -243,11 +243,15 @@ class TestThreadParallelWorkflow:
         results = workflow.map(test_func, [1, 2, 3, 4, 5])
         assert results == [2, 4, 6, 8, 10]
 
-        # 验证进度被记录
-        prog = monitor.get_progress("map")
-        assert prog is not None
-        assert prog.current == 5
-        assert prog.status == "completed"
+        # 验证进度被记录（map 内部会调用 gather，因此至少有两个任务）
+        all_prog = monitor.get_all_progress()
+        assert len(all_prog) >= 1
+        map_prog = next(
+            (p for p in all_prog.values() if ".map." in p.task_id), None
+        )
+        assert map_prog is not None
+        assert map_prog.current == 5
+        assert map_prog.status == "completed"
 
         workflow.shutdown()
 
@@ -265,9 +269,13 @@ class TestThreadParallelWorkflow:
         assert results == [2, 4, 6]
 
         # 验证 gather 进度被记录
-        prog = monitor.get_progress("gather")
-        assert prog is not None
-        assert prog.current == 3
+        all_prog = monitor.get_all_progress()
+        assert len(all_prog) >= 1
+        gather_prog = next(
+            (p for p in all_prog.values() if ".gather." in p.task_id), None
+        )
+        assert gather_prog is not None
+        assert gather_prog.current == 3
 
         workflow.shutdown()
 
@@ -408,10 +416,14 @@ class TestRayParallelWorkflow:
         results = workflow.map(test_func, [1, 2, 3, 4, 5])
         assert results == [2, 4, 6, 8, 10]
 
-        prog = monitor.get_progress("map")
-        assert prog is not None
-        assert prog.current == 5
-        assert prog.status == "completed"
+        all_prog = monitor.get_all_progress()
+        assert len(all_prog) >= 1
+        map_prog = next(
+            (p for p in all_prog.values() if ".map." in p.task_id), None
+        )
+        assert map_prog is not None
+        assert map_prog.current == 5
+        assert map_prog.status == "completed"
 
     def test_gather_with_progress_monitor(self):
         """测试 Ray gather 操作使用 ProgressManager 跟踪进度。"""
@@ -427,6 +439,10 @@ class TestRayParallelWorkflow:
         results = workflow.gather(futures)
         assert results == [2, 4, 6]
 
-        prog = monitor.get_progress("gather")
-        assert prog is not None
-        assert prog.current == 3
+        all_prog = monitor.get_all_progress()
+        assert len(all_prog) >= 1
+        gather_prog = next(
+            (p for p in all_prog.values() if ".gather." in p.task_id), None
+        )
+        assert gather_prog is not None
+        assert gather_prog.current == 3

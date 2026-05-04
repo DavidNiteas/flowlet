@@ -1,4 +1,6 @@
 """可执行单元模块，定义了工作流和核心执行单元的基础结构。"""
+from __future__ import annotations
+
 import copy
 import importlib.util
 import threading
@@ -154,13 +156,17 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
         self.result = result
         return result
 
-    def execute_async(self) -> None:
-        """异步执行可执行单元（基于线程）。
+    def execute_async(self) -> ExecutionFuture:
+        """异步执行可执行单元（基于线程），返回 future-like 对象。
 
-        创建一个线程来异步执行execute方法，执行完毕后将结果保存到result属性。
+        创建一个线程来异步执行 execute 方法。执行完毕后结果保存到 result 属性。
+        返回的 ExecutionFuture 可用于检查完成状态、等待或获取结果。
 
         Returns:
-            None
+            ExecutionFuture: 可用于跟踪异步执行并获取结果的对象。
+
+        Raises:
+            RuntimeError: 如果该单元已经在运行中。
         """
         if self._thread is not None:
             raise RuntimeError("executable unit is already running")
@@ -171,20 +177,24 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
             finally:
                 self._thread = None
 
-        self._thread = threading.Thread(target=_async_execute)
-        self._thread.daemon = True
-        self._thread.start()
+        thread = threading.Thread(target=_async_execute)
+        thread.daemon = True
+        thread.start()
+        self._thread = thread
+        return ExecutionFuture(self, thread)
 
-    def execute_ray(self) -> None:
-        """异步执行可执行单元（基于Ray）。
+    def execute_ray(self) -> ExecutionFuture:
+        """异步执行可执行单元（基于 Ray），返回 future-like 对象。
 
-        创建一个线程，将任务发送到Ray集群执行，执行完毕后将结果保存到result属性。
+        创建一个线程将任务发送到 Ray 集群执行。执行完毕后结果保存到 result 属性。
+        返回的 ExecutionFuture 可用于检查完成状态、等待或获取结果。
 
         Returns:
-            None
+            ExecutionFuture: 可用于跟踪异步执行并获取结果的对象。
 
         Raises:
-            ImportError: 如果Ray不可用
+            ImportError: 如果 Ray 不可用。
+            RuntimeError: 如果该单元已经在运行中。
         """
         if not self._ray_available:
             raise ImportError("Ray is not available")
@@ -195,7 +205,7 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
         def _ray_execute():
             try:
                 import ray
-                # 确保Ray已初始化
+                # 确保 Ray 已初始化
                 if not ray.is_initialized():
                     ray.init()
 
@@ -207,17 +217,19 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
 
                 # 序列化当前实例
                 unit_id = ray.put(self)
-                # 发送任务到Ray集群
-                future = remote_execute.remote(unit_id)
+                # 发送任务到 Ray 集群
+                ray_future = remote_execute.remote(unit_id)
 
                 # 等待执行结果
-                self.result = ray.get(future)
+                self.result = ray.get(ray_future)
             finally:
                 self._thread = None
 
-        self._thread = threading.Thread(target=_ray_execute)
-        self._thread.daemon = True
-        self._thread.start()
+        thread = threading.Thread(target=_ray_execute)
+        thread.daemon = True
+        thread.start()
+        self._thread = thread
+        return ExecutionFuture(self, thread)
 
     def __getstate__(self):
         """序列化对象时调用，跳过_thread属性。
@@ -258,6 +270,125 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
             ResultT: 执行结果
         """
         ...
+
+    def as_task(self, inputs=None, outputs=None, name=None):
+        """将此 ExecutableUnit 包装为 TaskNode，用于计算图。
+
+        如果类定义了 ``input_field`` / ``output_field``，且 ``inputs`` /
+        ``outputs`` 未显式传入，则自动从类属性构建。
+
+        Args:
+            inputs: list[InputSlot]，输入槽定义。None 时尝试从 ``input_field`` 构建。
+            outputs: OutputSpec，输出规格。None 时尝试从 ``output_field`` 构建。
+            name: 节点名称，默认使用类名。
+
+        Returns:
+            TaskNode: 包装后的任务图节点。
+
+        Raises:
+            ValueError: 如果 ``inputs`` / ``outputs`` 为 None 且类未定义对应字段。
+        """
+        from flowlet.compute_graph import TaskNode
+
+        resolved_inputs = inputs if inputs is not None else self._build_input_slots()
+        resolved_outputs = outputs if outputs is not None else self._build_output_spec()
+
+        return TaskNode(
+            self, resolved_inputs, resolved_outputs, name or self.__class__.__name__
+        )
+
+    def _build_input_slots(self):
+        """从 ``input_field`` 类属性构建 InputSlot 列表。"""
+        from flowlet.compute_graph import InputField, InputSlot
+
+        fields = getattr(self, "input_field", None) or getattr(
+            self.__class__, "input_field", None
+        )
+        if fields is None:
+            raise ValueError(
+                f"{self.__class__.__name__} 未定义 input_field，"
+                f"请显式传入 inputs 参数或在类中定义 input_field"
+            )
+
+        slots = []
+        for f in fields:
+            if isinstance(f, InputField):
+                slots.append(InputSlot(f.name, f.required, f.default))
+            elif isinstance(f, dict):
+                slots.append(
+                    InputSlot(
+                        f["name"],
+                        f.get("required", True),
+                        f.get("default", None),
+                    )
+                )
+            else:
+                raise TypeError(f"input_field 中的元素类型不支持: {type(f)}")
+        return slots
+
+    def _build_output_spec(self):
+        """从 ``output_field`` 类属性构建 OutputSpec。"""
+        from flowlet.compute_graph import OutputField, OutputSpec
+
+        field = getattr(self, "output_field", None) or getattr(
+            self.__class__, "output_field", None
+        )
+        if field is None:
+            raise ValueError(
+                f"{self.__class__.__name__} 未定义 output_field，"
+                f"请显式传入 outputs 参数或在类中定义 output_field"
+            )
+
+        if isinstance(field, OutputField):
+            return OutputSpec(field.type)
+        elif isinstance(field, dict):
+            return OutputSpec(field["type"])
+        else:
+            raise TypeError(f"output_field 类型不支持: {type(field)}")
+
+class ExecutionFuture:
+    """future-like 对象，包装 ExecutableUnit 的异步执行。
+
+    提供检查完成状态、阻塞等待和获取结果的接口。
+    """
+
+    def __init__(self, unit: ExecutableUnit, thread: threading.Thread) -> None:
+        self._unit = unit
+        self._thread = thread
+
+    def is_done(self) -> bool:
+        """检查异步执行是否已完成。"""
+        return not self._thread.is_alive()
+
+    def join(self, timeout: float | None = None) -> None:
+        """阻塞等待异步执行完成。
+
+        Args:
+            timeout: 最大等待秒数，None 表示无限等待。
+        """
+        self._thread.join(timeout)
+
+    def get(self, timeout: float | None = None) -> Any:
+        """阻塞等待并返回执行结果。
+
+        Args:
+            timeout: 最大等待秒数，None 表示无限等待。
+
+        Returns:
+            执行单元的执行结果。
+
+        Raises:
+            RuntimeError: 如果执行尚未完成且超时。
+        """
+        self.join(timeout)
+        if not self.is_done():
+            raise RuntimeError("Execution timed out")
+        return self._unit.result
+
+    def __call__(self) -> Any:
+        """快捷方式：阻塞等待并返回结果。"""
+        return self.get()
+
 
 class Kernel(ExecutableUnit[ConfigT, ResultT]):
     """核心执行单元，用于执行具体的任务逻辑。

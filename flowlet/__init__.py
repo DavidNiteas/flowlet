@@ -14,7 +14,7 @@
 from .base import BaseHolder, Default, Emptyholder, Placeholder, Voidholder
 from .config import BaseBranchConfig, BaseConfig, BaseConfigContainer, ConfigMap, ConfigSequence
 from .dispatcher import Dispatcher
-from .executable_unit import ExecutableUnit, Kernel, Workflow
+from .executable_unit import ExecutableUnit, ExecutionFuture, Kernel, Workflow
 from .parallel_unit import ParallelConfig, RayParallelWorkflow, RayPoolCreatorWorkflow, ThreadParallelWorkflow
 from .strategy import BaseStrategy, MountPoint, mount
 
@@ -30,6 +30,7 @@ __all__ = [
     "ConfigMap",
     "ConfigSequence",
     "ExecutableUnit",
+    "ExecutionFuture",
     "Kernel",
     "Workflow",
     "Dispatcher",

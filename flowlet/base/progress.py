@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 import warnings
@@ -139,8 +140,12 @@ class BaseProgress(ABC):
     # ---- 抽象写方法（子类实现） ----
 
     @abstractmethod
-    def register_task(self, task_id: str, description: str, total: int = 0) -> None:
-        """注册一个新任务。"""
+    def register_task(self, task_id: str, description: str, total: int = 0) -> str:
+        """注册一个新任务。
+
+        Returns:
+            注册的任务标识（即传入的 ``task_id``）。
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -195,10 +200,38 @@ class BaseProgress(ABC):
 
     # ---- 内部方法 ----
 
+    @staticmethod
+    def get_caller_info(k: int) -> tuple[str, ...]:
+        """向上追溯 k 级调用者，返回各级函数名的元组。
+
+        返回的元组中，索引 ``0`` 为直接调用者（向上回溯 1 级），
+        索引 ``i`` 为向上回溯 ``i + 1`` 级的调用者。
+
+        例如 ``k=2`` 时，返回 ``(直接调用者名称, 二级调用者名称)``。
+
+        Args:
+            k: 要追溯的级数，必须 >= 1。
+
+        Returns:
+            各级调用者函数名的元组。若某级不存在，用 ``"unknown"`` 填充。
+        """
+
+        def _frame_name(i: int) -> str:
+            try:
+                return sys._getframe(i).f_code.co_name
+            except ValueError:
+                return "unknown"
+
+        return tuple(map(_frame_name, range(1, k + 1)))
+
     def _register_task_local(
         self, task_id: str, description: str, total: int = 0
-    ) -> None:
-        """本地注册任务（不触发 IPC）。"""
+    ) -> str:
+        """本地注册任务（不触发 IPC）。
+
+        Returns:
+            注册的任务标识（即传入的 ``task_id``）。
+        """
         with self._lock:
             self._tasks[task_id] = TaskProgress(
                 task_id=task_id,
@@ -208,6 +241,7 @@ class BaseProgress(ABC):
                 status="pending",
             )
             self._sync_to_display(task_id)
+        return task_id
 
     def _update_progress_local(
         self,
@@ -314,12 +348,17 @@ class BaseProgressProxy(BaseProgress, ABC):
         if tasks_snapshot is not None:
             self._tasks = tasks_snapshot
 
-    def register_task(self, task_id: str, description: str, total: int = 0) -> None:
-        """注册一个新任务（更新本地缓存 + 发送 IPC 消息）。"""
+    def register_task(self, task_id: str, description: str, total: int = 0) -> str:
+        """注册一个新任务（更新本地缓存 + 发送 IPC 消息）。
+
+        Returns:
+            注册的任务标识（即传入的 ``task_id``）。
+        """
         self._register_task_local(task_id, description, total)
         self._send_message(
             RegisterTaskMessage(task_id=task_id, description=description, total=total)
         )
+        return task_id
 
     def update_progress(
         self,
@@ -516,9 +555,13 @@ class ProgressManager(BaseProgress):
 
     # ---- 实现抽象写方法 ----
 
-    def register_task(self, task_id: str, description: str, total: int = 0) -> None:
-        """注册一个新任务。"""
-        self._register_task_local(task_id, description, total)
+    def register_task(self, task_id: str, description: str, total: int = 0) -> str:
+        """注册一个新任务。
+
+        Returns:
+            注册的任务标识（即传入的 ``task_id``）。
+        """
+        return self._register_task_local(task_id, description, total)
 
     def update_progress(
         self,

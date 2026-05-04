@@ -19,6 +19,12 @@ class ParallelConfig(BaseConfig):
         ge=1,
     )
 
+    parallel_threshold: int = Field(
+        default=4,
+        description="任务数低于此阈值时不启用线程池，直接串行执行以避免线程池开销",
+        ge=1,
+    )
+
     # 进度显示配置
     show_progress: bool = Field(
         default=False,
