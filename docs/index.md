@@ -34,6 +34,13 @@ Flowlet 架构
 │       ├── is_subclass_in_annotation
 │       ├── extract_target_subclass_from_annotation
 │       └── is_instance_in_annotation
+├── 计算图 (Compute Graph)
+│   ├── TaskNode (反向 DAG 任务节点)
+│   ├── InputSlot / OutputSpec (输入输出定义)
+│   ├── InputField / OutputField (ExecutableUnit 元数据)
+│   ├── InputVar (命名输入变量)
+│   ├── OutputRef (子输出引用)
+│   └── TracedGraph (图追溯与可视化)
 ├── 进度管理
 │   ├── ProgressManager (进度监视器)
 │   │   ├── 同进程模式 (threading.RLock)
@@ -62,6 +69,7 @@ Flowlet 架构
 | 文档 | 内容 | 对应模块 |
 |------|------|----------|
 | [可执行单元](executable_unit.md) | `ExecutableUnit` / `Kernel` / `Workflow` | `flowlet.executable_unit` |
+| [计算图](compute_graph.md) | `TaskNode` / 反向 DAG / 可视化 | `flowlet.compute_graph` |
 | [分发器](dispatcher.md) | `Dispatcher` 分支执行 | `flowlet.dispatcher` |
 | [配置系统](config.md) | `BaseConfig` / `BaseConfigContainer` / `BaseBranchConfig` | `flowlet.config` |
 | [并行工作流](parallel.md) | `ThreadParallelWorkflow` / `RayParallelWorkflow` | `flowlet.parallel_unit` |
@@ -73,6 +81,7 @@ Flowlet 架构
 
 - **入门**：从 [示例与最佳实践](examples.md) 开始，快速了解典型用法
 - **写业务逻辑**：参考 [可执行单元](executable_unit.md) 和 [分发器](dispatcher.md)
+- **构建任务图**：参考 [计算图](compute_graph.md)
 - **配置管理**：参考 [配置系统](config.md)
 - **并行执行**：参考 [并行工作流](parallel.md)
 - **进度跟踪**：参考 [进度管理](progress.md)

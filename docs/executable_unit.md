@@ -100,6 +100,84 @@ result = unit.result
 
 ---
 
+## 与计算图集成
+
+### as_task() — 一键转 TaskNode
+
+```python
+from flowlet.compute_graph import InputSlot, OutputSpec
+
+# 手动传入 inputs / outputs
+task = unit.as_task(
+    inputs=[InputSlot("data")],
+    outputs=OutputSpec("single"),
+    name="my_task",
+)
+```
+
+### input_field / output_field 元数据
+
+在类定义时声明输入输出，使 `as_task()` 自动识别：
+
+```python
+from flowlet import Kernel
+from flowlet.compute_graph import InputField, OutputField
+
+class MyKernel(Kernel):
+    config = {}
+
+    input_field = [
+        InputField("data", required=True),
+        InputField("ratio", default=0.2),
+    ]
+    output_field = OutputField("tuple")
+
+    def __call__(self, data, ratio=0.2):
+        return train_test_split(data, test_size=ratio)
+
+unit = MyKernel()
+task = unit.as_task()  # 自动识别，无需手动传入
+```
+
+也支持字典形式：
+
+```python
+class MyKernel(Kernel):
+    input_field = [
+        {"name": "data", "required": True},
+        {"name": "ratio", "default": 0.2},
+    ]
+    output_field = {"type": "tuple"}
+```
+
+---
+
+## ExecutionFuture（异步执行 Future）
+
+`execute_async()` / `execute_ray()` 返回 `ExecutionFuture`，提供 future-like 接口：
+
+```python
+from flowlet import ExecutionFuture
+
+future = unit.execute_async()
+
+future.is_done()   # 检查是否完成
+future.join()      # 阻塞等待
+future.get()       # 阻塞等待并返回结果
+future()           # 快捷方式
+```
+
+可用于计算图中的异步节点：
+
+```python
+from flowlet.compute_graph import TaskNode
+
+async_node = TaskNode(unit.execute_async, inputs=[...], outputs=...)
+# execute() 每层结束后自动等待 future-like 完成
+```
+
+---
+
 ## Kernel（核心执行单元）
 
 `Kernel` 是 `ExecutableUnit` 的子类，专门用于执行具体的计算或处理任务。
