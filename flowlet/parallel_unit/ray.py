@@ -318,3 +318,13 @@ class RayParallelWorkflow(Workflow):
             return tqdm_notebook(iterable, desc=description)
         else:
             return iterable
+
+    def __enter__(self) -> RayParallelWorkflow:
+        """上下文管理器入口。"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """上下文管理器出口。Ray集群由Ray自身管理，此处不做额外清理。"""
+
+    def __del__(self) -> None:
+        """资源清理。Ray集群由Ray自身管理，此处不做额外清理。"""
