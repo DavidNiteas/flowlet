@@ -54,6 +54,7 @@ with ThreadParallelWorkflow(max_concurrent_tasks=4) as wf:
 |------|------|------|
 | `flowlet.executable_unit` | 可执行单元（ExecutableUnit / Kernel / Workflow） | [docs/executable_unit.md](docs/executable_unit.md) |
 | `flowlet.dispatcher` | 条件分发器（Dispatcher） | [docs/dispatcher.md](docs/dispatcher.md) |
+| `flowlet.strategy` | 策略模式（BaseStrategy / @mount） | [docs/strategy.md](docs/strategy.md) |
 | `flowlet.config` | 配置系统（BaseConfig / BaseConfigContainer / BaseBranchConfig） | [docs/config.md](docs/config.md) |
 | `flowlet.parallel_unit` | 并行工作流（Thread / Ray / RayPoolCreator） | [docs/parallel.md](docs/parallel.md) |
 | `flowlet.base.progress` | 进度管理（ProgressManager / Proxy） | [docs/progress.md](docs/progress.md) |

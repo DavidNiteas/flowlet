@@ -124,7 +124,7 @@ def mount(
     """
     spec = MountSpec(unit_cls, config_key, config_factory)
 
-    def decorator(func: Callable) -> MountPoint[UnitClsT]:
+    def decorator(func: Callable) -> MountPoint[UnitT]:
         return MountPoint(spec, func.__name__)
 
     return decorator

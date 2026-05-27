@@ -21,7 +21,8 @@ Flowlet 架构
 ├── 可执行单元体系
 │   ├── ExecutableUnit (抽象基类)
 │   │   ├── Kernel (核心执行单元)
-│   │   │   └── Dispatcher (分发器)
+│   │   │   ├── Dispatcher (分发器)
+│   │   │   └── BaseStrategy (策略基类)
 │   │   └── Workflow (工作流)
 │   │       ├── ThreadParallelWorkflow
 │   │       ├── RayParallelWorkflow
@@ -71,6 +72,7 @@ Flowlet 架构
 | [可执行单元](executable_unit.md) | `ExecutableUnit` / `Kernel` / `Workflow` | `flowlet.executable_unit` |
 | [计算图](compute_graph.md) | `TaskNode` / 反向 DAG / 可视化 | `flowlet.compute_graph` |
 | [分发器](dispatcher.md) | `Dispatcher` 分支执行 | `flowlet.dispatcher` |
+| [策略](strategy.md) | `BaseStrategy` / `@mount` 策略聚合 | `flowlet.strategy` |
 | [配置系统](config.md) | `BaseConfig` / `BaseConfigContainer` / `BaseBranchConfig` | `flowlet.config` |
 | [并行工作流](parallel.md) | `ThreadParallelWorkflow` / `RayParallelWorkflow` | `flowlet.parallel_unit` |
 | [进度管理](progress.md) | `ProgressManager` / `MPProgressProxy` / `RayProgressProxy` | `flowlet.base.progress` |
@@ -81,6 +83,7 @@ Flowlet 架构
 
 - **入门**：从 [示例与最佳实践](examples.md) 开始，快速了解典型用法
 - **写业务逻辑**：参考 [可执行单元](executable_unit.md) 和 [分发器](dispatcher.md)
+- **组合多单元为策略**：参考 [策略](strategy.md)
 - **构建任务图**：参考 [计算图](compute_graph.md)
 - **配置管理**：参考 [配置系统](config.md)
 - **并行执行**：参考 [并行工作流](parallel.md)
