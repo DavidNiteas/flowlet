@@ -40,17 +40,13 @@ class TracedGraph:
                     # TaskNode（避免循环导入，不使用 isinstance）
                     parent_id = id(value)
                     self._edges.append((parent_id, node_id, slot_name))
-                    self._children.setdefault(parent_id, []).append(
-                        (slot_name, node)
-                    )
+                    self._children.setdefault(parent_id, []).append((slot_name, node))
                     dfs(value)
                 elif hasattr(value, "_node"):
                     # OutputRef
                     parent_id = id(value._node)
                     self._edges.append((parent_id, node_id, slot_name))
-                    self._children.setdefault(parent_id, []).append(
-                        (slot_name, node)
-                    )
+                    self._children.setdefault(parent_id, []).append((slot_name, node))
                     dfs(value._node)
 
         dfs(self._root)
@@ -75,9 +71,7 @@ class TracedGraph:
                 elif hasattr(value, "_parents"):
                     deps[slot_name] = name_map[id(value)]
                 elif hasattr(value, "_selector"):
-                    deps[slot_name] = (
-                        f"{name_map[id(value._node)]}[{value._selector!r}]"
-                    )
+                    deps[slot_name] = f"{name_map[id(value._node)]}[{value._selector!r}]"
                 else:
                     deps[slot_name] = repr(value)
             result[name] = (node._name, deps)
@@ -98,20 +92,16 @@ class TracedGraph:
         lines.extend(f'    input_{name}["📝 {name}"]' for name in self._input_vars)
 
         # 任务节点
-        lines.extend(
-            f'    node_{node_id}["⚙️ {node._name}"]'
-            for node_id, node in self._nodes.items()
-        )
+        lines.extend(f'    node_{node_id}["⚙️ {node._name}"]' for node_id, node in self._nodes.items())
 
         # 边
         lines.extend(
-            f"    node_{parent_id} -->|{slot_name}| node_{child_id}"
-            for parent_id, child_id, slot_name in self._edges
+            f"    node_{parent_id} -->|{slot_name}| node_{child_id}" for parent_id, child_id, slot_name in self._edges
         )
 
         # 输入变量到节点的边
         lines.extend(
-            f'    input_{value.name} -->|{slot_name}| node_{node_id}'
+            f"    input_{value.name} -->|{slot_name}| node_{node_id}"
             for node_id, node in self._nodes.items()
             for slot_name, value in node._bindings.items()
             if isinstance(value, InputVar)
@@ -187,19 +177,13 @@ class TracedGraph:
 
         # 边
         for parent_id, child_id, slot_name in self._edges:
-            lines.append(
-                f'    {name_map[parent_id]} -> {name_map[child_id]} '
-                f'[label="{slot_name}"];'
-            )
+            lines.append(f'    {name_map[parent_id]} -> {name_map[child_id]} [label="{slot_name}"];')
 
         # 输入变量边
         for node_id, node in self._nodes.items():
             for slot_name, value in node._bindings.items():
                 if isinstance(value, InputVar):
-                    lines.append(
-                        f'    input_{value.name} -> {name_map[node_id]} '
-                        f'[label="{slot_name}", style=dashed];'
-                    )
+                    lines.append(f'    input_{value.name} -> {name_map[node_id]} [label="{slot_name}", style=dashed];')
 
         lines.append("}")
         return "\n".join(lines)
@@ -227,9 +211,7 @@ class TracedGraph:
             for index, (slot_name, parent) in enumerate(parents):
                 is_last = index == len(parents) - 1
                 connector = "└── " if is_last else "├── "
-                lines.append(
-                    f"{prefix}{connector}[{slot_name}] {parent._name}"
-                )
+                lines.append(f"{prefix}{connector}[{slot_name}] {parent._name}")
                 extension = "    " if is_last else "│   "
                 walk(parent, prefix + extension)
 
@@ -263,9 +245,7 @@ class TracedGraph:
                     elif hasattr(value, "_parents"):
                         bound_info.append(f"{slot}={value._name}")
                     elif hasattr(value, "_node"):
-                        bound_info.append(
-                            f"{slot}={value._node._name}[{value._selector!r}]"
-                        )
+                        bound_info.append(f"{slot}={value._node._name}[{value._selector!r}]")
                     else:
                         bound_info.append(f"{slot}={value!r}")
                 if bound_info:
@@ -281,7 +261,5 @@ class TracedGraph:
 
     def __repr__(self) -> str:
         return (
-            f"TracedGraph(nodes={len(self._nodes)}, "
-            f"edges={len(self._edges)}, "
-            f"inputs={list(self._input_vars.keys())})"
+            f"TracedGraph(nodes={len(self._nodes)}, edges={len(self._edges)}, inputs={list(self._input_vars.keys())})"
         )

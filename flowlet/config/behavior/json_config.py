@@ -7,7 +7,6 @@ from .dict_config import DictConfigBehavior
 
 
 class JsonConfigBehavior(DictConfigBehavior):
-
     def to_json_string(self) -> str:
         """将配置转换为JSON字符串。
 

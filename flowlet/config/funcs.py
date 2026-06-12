@@ -3,8 +3,9 @@ from typing import Any, Literal, TypeVar, overload
 
 from pydantic.fields import FieldInfo
 
-QryConfigType = TypeVar('ConfigType')
-DefConfigType = TypeVar('DefConfigType')
+QryConfigType = TypeVar("ConfigType")
+DefConfigType = TypeVar("DefConfigType")
+
 
 @overload
 def extract_config_from_container(
@@ -12,8 +13,8 @@ def extract_config_from_container(
     config_type: type[QryConfigType],
     raise_err: Literal[True] = True,
     default_config: DefConfigType = None,
-) -> QryConfigType:
-    ...
+) -> QryConfigType: ...
+
 
 @overload
 def extract_config_from_container(
@@ -21,8 +22,8 @@ def extract_config_from_container(
     config_type: type[QryConfigType],
     raise_err: Literal[False] = False,
     default_config: DefConfigType = None,
-) -> QryConfigType | DefConfigType:
-    ...
+) -> QryConfigType | DefConfigType: ...
+
 
 def extract_config_from_container(
     config_container: Sequence[Any | QryConfigType] | Set[Any | QryConfigType],
@@ -37,6 +38,7 @@ def extract_config_from_container(
         raise ValueError(f"No config of type {config_type.__name__} found in container")
     return default_config
 
+
 @overload
 def extract_config_from_mapping(
     config_mapping: Mapping[str, Any | QryConfigType],
@@ -44,8 +46,8 @@ def extract_config_from_mapping(
     key: str | None = None,
     raise_err: Literal[True] = True,
     default_config: DefConfigType | None = None,
-) -> QryConfigType:
-    ...
+) -> QryConfigType: ...
+
 
 @overload
 def extract_config_from_mapping(
@@ -54,8 +56,8 @@ def extract_config_from_mapping(
     key: str | None = None,
     raise_err: Literal[False] = False,
     default_config: DefConfigType = None,
-) -> QryConfigType | DefConfigType:
-    ...
+) -> QryConfigType | DefConfigType: ...
+
 
 def extract_config_from_mapping(
     config_mapping: Mapping[str, Any | QryConfigType],
@@ -83,6 +85,7 @@ def extract_config_from_mapping(
         raise ValueError(f"No config of type {config_type.__name__} found in mapping")
     return default_config
 
+
 @overload
 def extract_config_from_instance(
     obj: Any,
@@ -90,8 +93,8 @@ def extract_config_from_instance(
     key: str | None = None,
     raise_err: Literal[True] = True,
     default_config: DefConfigType = None,
-) -> QryConfigType:
-    ...
+) -> QryConfigType: ...
+
 
 @overload
 def extract_config_from_instance(
@@ -100,8 +103,8 @@ def extract_config_from_instance(
     key: str | None = None,
     raise_err: Literal[False] = False,
     default_config: DefConfigType = None,
-) -> QryConfigType | DefConfigType:
-    ...
+) -> QryConfigType | DefConfigType: ...
+
 
 def extract_config_from_instance(
     obj: Any,
@@ -123,7 +126,7 @@ def extract_config_from_instance(
         return default_config
 
     for attr_name in dir(obj):
-        if not attr_name.startswith('__') and not attr_name.endswith('__'):
+        if not attr_name.startswith("__") and not attr_name.endswith("__"):
             try:
                 item = getattr(obj, attr_name)
                 if isinstance(item, config_type):
@@ -134,6 +137,7 @@ def extract_config_from_instance(
         raise ValueError(f"No config of type {config_type.__name__} found in instance")
     return default_config
 
+
 @overload
 def extract_config_from_FieldInfo(
     field_info: FieldInfo,
@@ -141,8 +145,8 @@ def extract_config_from_FieldInfo(
     key: str | None = None,
     raise_err: Literal[True] = True,
     default_config: DefConfigType = None,
-) -> QryConfigType:
-    ...
+) -> QryConfigType: ...
+
 
 @overload
 def extract_config_from_FieldInfo(
@@ -151,8 +155,8 @@ def extract_config_from_FieldInfo(
     key: str | None = None,
     raise_err: Literal[False] = False,
     default_config: DefConfigType = None,
-) -> QryConfigType | DefConfigType:
-    ...
+) -> QryConfigType | DefConfigType: ...
+
 
 def extract_config_from_FieldInfo(
     field_info: FieldInfo,
@@ -166,4 +170,3 @@ def extract_config_from_FieldInfo(
             raise ValueError("FieldInfo does not have json_schema_extra")
         return default_config
     return extract_config_from_mapping(field_info.json_schema_extra, config_type, key, raise_err, default_config)
-

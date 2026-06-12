@@ -200,6 +200,7 @@ class ThreadParallelWorkflow(Workflow):
             timeout: 超时时间（秒）
         """
         from concurrent.futures import wait
+
         wait(futures, timeout=timeout)
 
     def as_completed(self, futures: Iterable[Future], timeout: float | None = None):
@@ -238,12 +239,15 @@ class ThreadParallelWorkflow(Workflow):
 
         if bar_type == "rich":
             from rich.progress import track
+
             return track(iterable, description=description)
         elif bar_type == "tqdm":
             from tqdm import tqdm
+
             return tqdm(iterable, desc=description)
         elif bar_type == "jupyter":
             from tqdm.notebook import tqdm as tqdm_notebook
+
             return tqdm_notebook(iterable, desc=description)
         else:
             return iterable

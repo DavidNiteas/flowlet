@@ -58,11 +58,7 @@ def _resolve_future(future: Any) -> Any:
 
 def _pipe_bind(target: TaskNode, source: TaskNode | Any) -> TaskNode:
     """将 source 作为 target 的输入，自动推断输入槽。"""
-    required_slots = [
-        name
-        for name, slot in target._inputs.items()
-        if slot.required and slot.default is None
-    ]
+    required_slots = [name for name, slot in target._inputs.items() if slot.required and slot.default is None]
     if len(required_slots) == 1:
         return target.bind(**{required_slots[0]: source})
 

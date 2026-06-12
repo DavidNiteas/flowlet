@@ -170,6 +170,4 @@ class BaseStrategy(Kernel[ConfigT, ResultT]):
         required = getattr(cls, "_required_operations", ())
         missing = [op for op in required if op not in cls._operations]
         if missing:
-            raise TypeError(
-                f"{cls.__name__} must register operation: {missing[0]}"
-            )
+            raise TypeError(f"{cls.__name__} must register operation: {missing[0]}")

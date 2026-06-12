@@ -309,12 +309,15 @@ class RayParallelWorkflow(Workflow):
 
         if bar_type == "rich":
             from rich.progress import track
+
             return track(iterable, description=description)
         elif bar_type == "tqdm":
             from tqdm import tqdm
+
             return tqdm(iterable, desc=description)
         elif bar_type == "jupyter":
             from tqdm.notebook import tqdm as tqdm_notebook
+
             return tqdm_notebook(iterable, desc=description)
         else:
             return iterable

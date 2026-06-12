@@ -21,6 +21,7 @@ pixi install
 - **配置与逻辑分离**：`BaseConfig` / `BaseConfigContainer` / `BaseBranchConfig` 支持 JSON / TOML / MsgPack
 - **并行透明**：`ThreadParallelWorkflow`（IO 密集型）与 `RayParallelWorkflow`（CPU/GPU 密集型）统一接口
 - **跨进程进度**：`ProgressManager` + `MPProgressProxy` / `RayProgressProxy`，本地/多进程/Ray 三端汇聚
+- **Edge 模式**：`ThreadEdgeNode` / `RayEdgeNode` 提供有状态、命令式、异步执行的节点抽象，支持跨进程持有不可序列化对象
 - **语义占位符**：`Default` / `Placeholder` / `Emptyholder` / `Voidholder` 精确表达空值语义
 
 ## 快速开始
@@ -57,6 +58,7 @@ with ThreadParallelWorkflow(max_concurrent_tasks=4) as wf:
 | `flowlet.strategy` | 策略模式（BaseStrategy / @mount） | [docs/strategy.md](docs/strategy.md) |
 | `flowlet.config` | 配置系统（BaseConfig / BaseConfigContainer / BaseBranchConfig） | [docs/config.md](docs/config.md) |
 | `flowlet.parallel_unit` | 并行工作流（Thread / Ray / RayPoolCreator） | [docs/parallel.md](docs/parallel.md) |
+| `flowlet.edge` | Edge 模式（ThreadEdgeNode / RayEdgeNode） | [docs/edge.md](docs/edge.md) |
 | `flowlet.base.progress` | 进度管理（ProgressManager / Proxy） | [docs/progress.md](docs/progress.md) |
 | `flowlet.base` | 基础工具（语义占位符 / 类型注解） | [docs/base.md](docs/base.md) |
 | — | 完整示例、最佳实践、注意事项 | [docs/examples.md](docs/examples.md) |

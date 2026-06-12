@@ -1,4 +1,5 @@
 """分发内核模块，定义了Dispatcher类及其相关功能。"""
+
 from collections.abc import Callable
 from typing import ClassVar, TypeVar
 
@@ -17,9 +18,7 @@ class Dispatcher(Kernel[ConfigT, ResultT]):
     当重复执行时，上一个结果会被这一个覆盖。
     """
 
-    registered_units: ClassVar[
-        list[tuple[int, type[ExecutableUnit], Callable[..., bool], str | None]]
-    ] = []
+    registered_units: ClassVar[list[tuple[int, type[ExecutableUnit], Callable[..., bool], str | None]]] = []
     """已注册的分支列表，每个元素为(优先级, 执行单元类, 判断逻辑函数, config名称)。"""
 
     config: ConfigT
@@ -30,7 +29,7 @@ class Dispatcher(Kernel[ConfigT, ResultT]):
         cls,
         priority: int = 0,
         condition: Callable[..., bool] = lambda *args, **kwargs: True,
-        config_name: str | None = None
+        config_name: str | None = None,
     ):
         """
         注册执行单元的装饰器工厂方法。
@@ -43,11 +42,13 @@ class Dispatcher(Kernel[ConfigT, ResultT]):
         Returns:
             装饰器函数，用于注册执行单元
         """
+
         def decorator(unit_cls: type[ExecutableUnit]) -> type[ExecutableUnit]:
             cls.registered_units.append((priority, unit_cls, condition, config_name))
             # 按优先级排序，优先级高的在前
             cls.registered_units.sort(key=lambda x: -x[0])
             return unit_cls
+
         return decorator
 
     def __call__(self, *args, **kwargs) -> ResultT:
@@ -68,9 +69,5 @@ class Dispatcher(Kernel[ConfigT, ResultT]):
                     config_to_use = self.config
                 else:
                     config_to_use = getattr(self.config, config_name)
-                return unit_cls.run(
-                    *args,
-                    config=config_to_use,
-                    **kwargs
-                )
+                return unit_cls.run(*args, config=config_to_use, **kwargs)
         raise ValueError(f"No registered unit meets the condition for the given input {args, kwargs}")

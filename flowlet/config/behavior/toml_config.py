@@ -7,7 +7,6 @@ from .dict_config import DictConfigBehavior
 
 
 class TomlConfigBehavior(DictConfigBehavior):
-
     def to_toml_string(self) -> str:
         """将配置转换为TOML字符串。
 
@@ -48,4 +47,3 @@ class TomlConfigBehavior(DictConfigBehavior):
             配置实例
         """
         return cls.from_dict(toml.load(path))
-

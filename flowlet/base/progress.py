@@ -77,13 +77,9 @@ class UpdateProgressMessage(ProgressMessage):
 
     def apply(self, monitor: ProgressManager) -> None:
         if self.mode == "increment":
-            monitor._increment_progress_local(
-                self.task_id, self.current, self.status
-            )
+            monitor._increment_progress_local(self.task_id, self.current, self.status)
         else:
-            monitor._update_progress_local(
-                self.task_id, self.current, self.status
-            )
+            monitor._update_progress_local(self.task_id, self.current, self.status)
 
 
 class BaseProgress(ABC):
@@ -224,9 +220,7 @@ class BaseProgress(ABC):
 
         return tuple(map(_frame_name, range(1, k + 1)))
 
-    def _register_task_local(
-        self, task_id: str, description: str, total: int = 0
-    ) -> str:
+    def _register_task_local(self, task_id: str, description: str, total: int = 0) -> str:
         """本地注册任务（不触发 IPC）。
 
         Returns:
@@ -355,9 +349,7 @@ class BaseProgressProxy(BaseProgress, ABC):
             注册的任务标识（即传入的 ``task_id``）。
         """
         self._register_task_local(task_id, description, total)
-        self._send_message(
-            RegisterTaskMessage(task_id=task_id, description=description, total=total)
-        )
+        self._send_message(RegisterTaskMessage(task_id=task_id, description=description, total=total))
         return task_id
 
     def update_progress(
@@ -380,11 +372,7 @@ class BaseProgressProxy(BaseProgress, ABC):
             self._increment_progress_local(task_id, current, status)
         else:
             self._update_progress_local(task_id, current, status)
-        self._send_message(
-            UpdateProgressMessage(
-                task_id=task_id, current=current, status=status, mode=mode
-            )
-        )
+        self._send_message(UpdateProgressMessage(task_id=task_id, current=current, status=status, mode=mode))
 
     @abstractmethod
     def _send_message(self, msg: ProgressMessage) -> None:
@@ -425,9 +413,7 @@ class MPProgressProxy(BaseProgressProxy):
     def __setstate__(self, state: dict[str, Any]) -> None:
         """反序列化时重建基础状态，queue 设为 None。"""
         BaseProgress.__init__(self, state.get("bar_type", "rich"))
-        self._tasks = {
-            k: TaskProgress.from_dict(v) for k, v in state.get("tasks", {}).items()
-        }
+        self._tasks = {k: TaskProgress.from_dict(v) for k, v in state.get("tasks", {}).items()}
         self._queue = None
 
 
@@ -464,9 +450,7 @@ class RayProgressProxy(BaseProgressProxy):
     def __setstate__(self, state: dict[str, Any]) -> None:
         """反序列化时重建基础状态和 queue。"""
         BaseProgress.__init__(self, state.get("bar_type", "rich"))
-        self._tasks = {
-            k: TaskProgress.from_dict(v) for k, v in state.get("tasks", {}).items()
-        }
+        self._tasks = {k: TaskProgress.from_dict(v) for k, v in state.get("tasks", {}).items()}
         self._queue = state.get("queue")
 
 
@@ -546,9 +530,7 @@ class ProgressManager(BaseProgress):
     def __setstate__(self, state: dict[str, Any]) -> None:
         """反序列化时重建基础状态（不包含线程/队列）。"""
         BaseProgress.__init__(self, state.get("bar_type", "rich"))
-        self._tasks = {
-            k: TaskProgress.from_dict(v) for k, v in state.get("tasks", {}).items()
-        }
+        self._tasks = {k: TaskProgress.from_dict(v) for k, v in state.get("tasks", {}).items()}
         self._mp_queue = None
         self._ray_queue = None
         self._consumer_threads = []
@@ -615,9 +597,7 @@ class ProgressManager(BaseProgress):
             try:
                 from ray.util.queue import Queue as RayQueue
             except ImportError as exc:
-                raise RuntimeError(
-                    "Ray is not installed. Install ray to use get_ray_proxy()."
-                ) from exc
+                raise RuntimeError("Ray is not installed. Install ray to use get_ray_proxy().") from exc
             self._ray_queue = RayQueue()
             thread = threading.Thread(target=self._consume_ray_loop, daemon=True)
             thread.start()

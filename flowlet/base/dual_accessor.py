@@ -55,8 +55,7 @@ class dual_property(Generic[R]):
     @property
     def __isabstractmethod__(self) -> bool:
         return bool(
-            getattr(self.fget, "__isabstractmethod__", False)
-            or getattr(self.fget_cls, "__isabstractmethod__", False)
+            getattr(self.fget, "__isabstractmethod__", False) or getattr(self.fget_cls, "__isabstractmethod__", False)
         )
 
     @overload

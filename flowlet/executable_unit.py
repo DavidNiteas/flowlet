@@ -1,4 +1,5 @@
 """可执行单元模块，定义了工作流和核心执行单元的基础结构。"""
+
 from __future__ import annotations
 
 import copy
@@ -16,6 +17,7 @@ from .config import BaseBranchConfig, BaseConfig, BaseConfigContainer
 ConfigT = TypeVar("ConfigT", bound=BaseConfigContainer | BaseConfig | BaseBranchConfig)
 ResultT = TypeVar("ResultT")
 WorkflowConfigT = TypeVar("WorkflowConfigT", bound=BaseConfig | BaseBranchConfig)
+
 
 class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
     """可执行单元抽象基类，是所有可执行组件的基础。
@@ -74,7 +76,7 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
         """执行线程对象"""
         self._ray_available: bool = False
         """Ray是否可用"""
-        if importlib.util.find_spec('ray') is not None:
+        if importlib.util.find_spec("ray") is not None:
             self._ray_available = True
 
     @dual_method
@@ -116,7 +118,7 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
         Returns:
             Any: 执行结果
         """
-        instance:ExecutableUnit = cls(config, **kwargs)
+        instance: ExecutableUnit = cls(config, **kwargs)
         bound_instance = instance.bind_input(*args)
         return bound_instance.execute()
 
@@ -205,6 +207,7 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
         def _ray_execute():
             try:
                 import ray
+
                 # 确保 Ray 已初始化
                 if not ray.is_initialized():
                     ray.init()
@@ -238,7 +241,7 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
             dict: 序列化后的状态
         """
         state = self.__dict__.copy()
-        state['_thread'] = None
+        state["_thread"] = None
         return state
 
     def __setstate__(self, state):
@@ -248,10 +251,10 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
             state: 序列化后的状态
         """
         self.__dict__.update(state)
-        if '_thread' not in self.__dict__:
+        if "_thread" not in self.__dict__:
             self._thread = None
-        if '_ray_available' not in self.__dict__:
-            if importlib.util.find_spec('ray') is not None:
+        if "_ray_available" not in self.__dict__:
+            if importlib.util.find_spec("ray") is not None:
                 self._ray_available = True
             else:
                 self._ray_available = False
@@ -293,21 +296,16 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
         resolved_inputs = inputs if inputs is not None else self._build_input_slots()
         resolved_outputs = outputs if outputs is not None else self._build_output_spec()
 
-        return TaskNode(
-            self, resolved_inputs, resolved_outputs, name or self.__class__.__name__
-        )
+        return TaskNode(self, resolved_inputs, resolved_outputs, name or self.__class__.__name__)
 
     def _build_input_slots(self):
         """从 ``input_field`` 类属性构建 InputSlot 列表。"""
         from flowlet.compute_graph import InputField, InputSlot
 
-        fields = getattr(self, "input_field", None) or getattr(
-            self.__class__, "input_field", None
-        )
+        fields = getattr(self, "input_field", None) or getattr(self.__class__, "input_field", None)
         if fields is None:
             raise ValueError(
-                f"{self.__class__.__name__} 未定义 input_field，"
-                f"请显式传入 inputs 参数或在类中定义 input_field"
+                f"{self.__class__.__name__} 未定义 input_field，请显式传入 inputs 参数或在类中定义 input_field"
             )
 
         slots = []
@@ -330,13 +328,10 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
         """从 ``output_field`` 类属性构建 OutputSpec。"""
         from flowlet.compute_graph import OutputField, OutputSpec
 
-        field = getattr(self, "output_field", None) or getattr(
-            self.__class__, "output_field", None
-        )
+        field = getattr(self, "output_field", None) or getattr(self.__class__, "output_field", None)
         if field is None:
             raise ValueError(
-                f"{self.__class__.__name__} 未定义 output_field，"
-                f"请显式传入 outputs 参数或在类中定义 output_field"
+                f"{self.__class__.__name__} 未定义 output_field，请显式传入 outputs 参数或在类中定义 output_field"
             )
 
         if isinstance(field, OutputField):
@@ -345,6 +340,7 @@ class ExecutableUnit(ABC, Generic[ConfigT, ResultT]):
             return OutputSpec(field["type"])
         else:
             raise TypeError(f"output_field 类型不支持: {type(field)}")
+
 
 class ExecutionFuture:
     """future-like 对象，包装 ExecutableUnit 的异步执行。
@@ -400,6 +396,7 @@ class Kernel(ExecutableUnit[ConfigT, ResultT]):
     config: BaseConfig | BaseBranchConfig | BaseConfigContainer
     """核心执行单元的配置容器"""
 
+
 class Workflow(ExecutableUnit[WorkflowConfigT, ResultT]):
     """工作流执行单元，用于协调多个任务的执行。
 
@@ -409,4 +406,3 @@ class Workflow(ExecutableUnit[WorkflowConfigT, ResultT]):
 
     config: BaseConfig | BaseBranchConfig
     """工作流的配置对象"""
-

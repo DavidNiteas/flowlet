@@ -42,6 +42,13 @@ Flowlet 架构
 │   ├── InputVar (命名输入变量)
 │   ├── OutputRef (子输出引用)
 │   └── TracedGraph (图追溯与可视化)
+├── Edge 模式
+│   ├── EdgeNode (节点抽象)
+│   │   ├── ThreadEdgeNode (同进程 worker 线程后端)
+│   │   └── RayEdgeNode (Ray Actor 后端)
+│   ├── EdgeBackend (后端抽象)
+│   ├── EdgeConfig (配置)
+│   └── push / pull / apply / bind / run / join / close / kill
 ├── 进度管理
 │   ├── ProgressManager (进度监视器)
 │   │   ├── 同进程模式 (threading.RLock)
@@ -75,6 +82,7 @@ Flowlet 架构
 | [策略](strategy.md) | `BaseStrategy` / `@mount` 策略聚合 | `flowlet.strategy` |
 | [配置系统](config.md) | `BaseConfig` / `BaseConfigContainer` / `BaseBranchConfig` | `flowlet.config` |
 | [并行工作流](parallel.md) | `ThreadParallelWorkflow` / `RayParallelWorkflow` | `flowlet.parallel_unit` |
+| [Edge 模式](edge.md) | `ThreadEdgeNode` / `RayEdgeNode` | `flowlet.edge` |
 | [进度管理](progress.md) | `ProgressManager` / `MPProgressProxy` / `RayProgressProxy` | `flowlet.base.progress` |
 | [基础工具](base.md) | 语义占位符 / 类型注解工具 | `flowlet.base` |
 | [示例与最佳实践](examples.md) | 完整示例 / 最佳实践 / 注意事项 | — |
@@ -87,4 +95,5 @@ Flowlet 架构
 - **构建任务图**：参考 [计算图](compute_graph.md)
 - **配置管理**：参考 [配置系统](config.md)
 - **并行执行**：参考 [并行工作流](parallel.md)
+- **持有不可序列化对象 / 手动进程控制**：参考 [Edge 模式](edge.md)
 - **进度跟踪**：参考 [进度管理](progress.md)

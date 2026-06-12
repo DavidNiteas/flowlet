@@ -141,6 +141,41 @@ result3 = router.bind_input({"type": "video", "name": "test.mp4"}).execute()
 
 ---
 
+## 示例 4：Edge 模式持有不可序列化对象
+
+```python
+from flowlet.edge import RayEdgeNode
+
+# 假设 HeavyModel 来自 C 扩展，无法被 pickle
+def init_model():
+    from heavy_extension import HeavyModel
+    return {"model": HeavyModel()}
+
+node = RayEdgeNode(initializer=init_model, num_cpus=2)
+
+# 用可序列化的数据和函数遥控 Actor 中的模型
+def train(state, epochs):
+    model = state["model"]
+    for _ in range(epochs):
+        model.step()
+    return model.loss
+
+node.apply(train, output="loss", epochs=10)
+node.join()
+print(node.pull("loss"))
+
+# 最终把可序列化的 metrics 拉回主进程
+def get_metrics(state):
+    return state["model"].metrics
+
+node.apply(get_metrics, output="metrics")
+metrics = node.pull("metrics")
+
+node.close()
+```
+
+---
+
 ## 最佳实践
 
 ### 1. 配置设计
@@ -193,6 +228,7 @@ class LoggedKernel(Kernel[Config, Result]):
 
 - 对于 IO 密集型任务，使用 `ThreadParallelWorkflow`
 - 对于 CPU 密集型任务，使用 `RayParallelWorkflow`
+- 如果需要跨进程持有不可序列化对象，使用 `RayEdgeNode`
 - 合理设置 `max_concurrent_tasks` 避免资源耗尽
 - 使用进度条监控长时间运行的任务
 - 推荐使用 `ProgressManager` 替代内置进度条，功能更灵活，支持跨进程
@@ -225,5 +261,5 @@ def test_parallel_workflow():
 
 1. **线程安全**：在调用 `execute_async()` 或 `execute_ray()` 之前，确保对象不在执行状态
 2. **Ray 依赖**：使用 `execute_ray()` 需要安装 Ray 库
-3. **序列化**：确保配置和输入数据可序列化（特别是使用 Ray 时）
-4. **资源管理**：使用上下文管理器或显式调用 `shutdown()` 释放并行工作流资源
+3. **序列化**：确保配置和输入数据可序列化（特别是使用 Ray 时）；Edge 模式下不可序列化的中间产物应留在节点内部
+4. **资源管理**：使用上下文管理器或显式调用 `shutdown()` 释放并行工作流资源；EdgeNode 使用 `close()` 或 `kill()` 释放

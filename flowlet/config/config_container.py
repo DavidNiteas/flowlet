@@ -8,11 +8,10 @@ from .base_config import BaseConfig
 
 
 class BaseConfigContainer(BaseConfig):
-
     def update(
         self,
         *args: Any | BaseConfig | BaseConfigContainer | Default,
-        **kwargs: Any | BaseConfig | BaseConfigContainer | Default
+        **kwargs: Any | BaseConfig | BaseConfigContainer | Default,
     ) -> None:
         """更新配置字段。
 

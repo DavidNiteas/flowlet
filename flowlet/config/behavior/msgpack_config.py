@@ -7,7 +7,6 @@ from .dict_config import DictConfigBehavior
 
 
 class MsgpackConfigBehavior(DictConfigBehavior):
-
     def to_msgpack_bytes(self) -> bytes:
         """将配置转换为MsgPack字节。
 

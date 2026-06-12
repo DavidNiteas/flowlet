@@ -485,7 +485,6 @@ class TestRayProgressProxy:
         assert prog.current == 50
         assert prog.status == "running"
 
-
     def test_proxy_increment_ipc_sync(self):
         """测试 Ray Proxy 累加模式通过 IPC 同步到 Manager。"""
         monitor = ProgressManager()
@@ -762,9 +761,7 @@ def main() -> None:
     for task_id in ["local", "mp_worker", "ray_worker"]:
         prog = manager.get_progress(task_id)
         if prog:
-            print(
-                f"  {task_id}: {prog.current}/{prog.total}, status={prog.status}"
-            )
+            print(f"  {task_id}: {prog.current}/{prog.total}, status={prog.status}")
 
     ray.shutdown()
     print("\n=== 所有演示完成 ===")

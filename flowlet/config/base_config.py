@@ -5,9 +5,8 @@ from .behavior.toml_config import TomlConfigBehavior
 
 
 class BaseConfig(JsonConfigBehavior, MsgpackConfigBehavior, TomlConfigBehavior):
-
     pass
 
-class BaseBranchConfig(BranchConfigBehavior, BaseConfig):
 
+class BaseBranchConfig(BranchConfigBehavior, BaseConfig):
     pass

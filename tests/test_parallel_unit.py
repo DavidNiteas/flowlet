@@ -45,6 +45,7 @@ def _wait_until_ready(workflow, future, timeout: float = 10.0) -> None:
         time.sleep(0.1)
     pytest.fail(f"Ray future did not become ready within {timeout} seconds")
 
+
 # ==================== 测试1: ParallelConfig ====================
 
 
@@ -81,7 +82,7 @@ class TestParallelConfig:
             ray_runtime_env={"pip": ["numpy"]},
             ray_dashboard_port=8265,
             ray_include_dashboard=True,
-            ray_log_to_driver=False
+            ray_log_to_driver=False,
         )
         assert config.max_concurrent_tasks == 8
         assert config.show_progress is True
@@ -118,11 +119,7 @@ class TestParallelConfig:
 
     def test_config_serialization(self):
         """测试配置序列化和反序列化。"""
-        config = ParallelConfig(
-            max_concurrent_tasks=8,
-            show_progress=True,
-            per_task_num_cpus=2.0
-        )
+        config = ParallelConfig(max_concurrent_tasks=8, show_progress=True, per_task_num_cpus=2.0)
 
         # 序列化为字典
         config_dict = config.to_dict()
@@ -201,6 +198,7 @@ class TestThreadParallelWorkflow:
 
     def test_context_manager(self):
         """测试上下文管理器接口。"""
+
         def test_func(x):
             return x * 2
 
@@ -246,9 +244,7 @@ class TestThreadParallelWorkflow:
         # 验证进度被记录（map 内部会调用 gather，因此至少有两个任务）
         all_prog = monitor.get_all_progress()
         assert len(all_prog) >= 1
-        map_prog = next(
-            (p for p in all_prog.values() if ".map." in p.task_id), None
-        )
+        map_prog = next((p for p in all_prog.values() if ".map." in p.task_id), None)
         assert map_prog is not None
         assert map_prog.current == 5
         assert map_prog.status == "completed"
@@ -271,9 +267,7 @@ class TestThreadParallelWorkflow:
         # 验证 gather 进度被记录
         all_prog = monitor.get_all_progress()
         assert len(all_prog) >= 1
-        gather_prog = next(
-            (p for p in all_prog.values() if ".gather." in p.task_id), None
-        )
+        gather_prog = next((p for p in all_prog.values() if ".gather." in p.task_id), None)
         assert gather_prog is not None
         assert gather_prog.current == 3
 
@@ -390,7 +384,7 @@ class TestRayParallelWorkflow:
         config = ParallelConfig(
             per_task_num_cpus=1.0,
             per_task_num_gpus=0.0,  # 不使用GPU
-            per_task_memory=100 * 1024 * 1024  # 100MB
+            per_task_memory=100 * 1024 * 1024,  # 100MB
         )
 
         workflow = RayParallelWorkflow(config)
@@ -418,9 +412,7 @@ class TestRayParallelWorkflow:
 
         all_prog = monitor.get_all_progress()
         assert len(all_prog) >= 1
-        map_prog = next(
-            (p for p in all_prog.values() if ".map." in p.task_id), None
-        )
+        map_prog = next((p for p in all_prog.values() if ".map." in p.task_id), None)
         assert map_prog is not None
         assert map_prog.current == 5
         assert map_prog.status == "completed"
@@ -441,8 +433,6 @@ class TestRayParallelWorkflow:
 
         all_prog = monitor.get_all_progress()
         assert len(all_prog) >= 1
-        gather_prog = next(
-            (p for p in all_prog.values() if ".gather." in p.task_id), None
-        )
+        gather_prog = next((p for p in all_prog.values() if ".gather." in p.task_id), None)
         assert gather_prog is not None
         assert gather_prog.current == 3

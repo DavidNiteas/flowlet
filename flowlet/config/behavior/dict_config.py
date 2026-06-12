@@ -9,7 +9,6 @@ from ...base.type_annotation import get_class_from_annotation
 
 
 class DictConfigBehavior(BaseModel):
-
     model_config: ClassVar[ConfigDict] = ConfigDict(**{"arbitrary_types_allowed": True})
 
     def update(self, *args: Any | Self | Default, **kwargs: Any | Self | Default) -> None:

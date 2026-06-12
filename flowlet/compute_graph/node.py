@@ -109,9 +109,7 @@ class TaskNode:
 
         for slot_name, value in kwargs.items():
             if slot_name not in self._inputs:
-                raise UnknownSlotError(
-                    f"节点 '{self._name}' 没有输入槽 '{slot_name}'"
-                )
+                raise UnknownSlotError(f"节点 '{self._name}' 没有输入槽 '{slot_name}'")
 
             new._bindings[slot_name] = value
 
@@ -122,18 +120,14 @@ class TaskNode:
             elif isinstance(value, TaskNode):
                 # 绑定另一个节点 → 记录为 parent，继承其缺失输入
                 if _has_cycle(value, self):
-                    raise CyclicDependencyError(
-                        f"将 '{value._name}' 绑定到 '{self._name}.{slot_name}' 会形成环"
-                    )
+                    raise CyclicDependencyError(f"将 '{value._name}' 绑定到 '{self._name}.{slot_name}' 会形成环")
                 new._parents.append(value)
                 new._merge_missing(value._missing)
 
             elif isinstance(value, OutputRef):
                 parent = value._node
                 if _has_cycle(parent, self):
-                    raise CyclicDependencyError(
-                        f"将 '{parent._name}' 绑定到 '{self._name}.{slot_name}' 会形成环"
-                    )
+                    raise CyclicDependencyError(f"将 '{parent._name}' 绑定到 '{self._name}.{slot_name}' 会形成环")
                 new._parents.append(parent)
                 new._merge_missing(parent._missing)
 
@@ -148,10 +142,7 @@ class TaskNode:
         """
         for name, var in other.items():
             if name in self._missing and self._missing[name] is not var:
-                raise DuplicateNameError(
-                    f"输入变量 '{name}' 冲突："
-                    f"{self._missing[name]!r} vs {var!r}"
-                )
+                raise DuplicateNameError(f"输入变量 '{name}' 冲突：{self._missing[name]!r} vs {var!r}")
             self._missing[name] = var
 
     # ------------------------------------------------------------------
@@ -205,14 +196,10 @@ class TaskNode:
         unbound_slots = [
             name
             for name, slot in self._inputs.items()
-            if name not in self._bindings
-            and slot.required
-            and slot.default is None
+            if name not in self._bindings and slot.required and slot.default is None
         ]
         if unbound_slots:
-            raise UnboundInputError(
-                f"节点 '{self._name}' 存在未绑定的必填输入: {unbound_slots}"
-            )
+            raise UnboundInputError(f"节点 '{self._name}' 存在未绑定的必填输入: {unbound_slots}")
 
         # 检查所有缺失的外部输入是否已提供
         missing_names = set(self._missing.keys()) - set(inputs.keys())
@@ -278,9 +265,7 @@ class TaskNode:
         dfs(self)
         return all_nodes
 
-    def _topological_sort(
-        self, all_nodes: dict[int, TaskNode]
-    ) -> list[list[TaskNode]]:
+    def _topological_sort(self, all_nodes: dict[int, TaskNode]) -> list[list[TaskNode]]:
         """对所有节点进行拓扑排序，返回按层分组的节点列表。
 
         每一层内的节点之间没有依赖关系，可以并行执行。
@@ -298,11 +283,7 @@ class TaskNode:
 
         # Kahn 算法，按层处理
         layers: list[list[TaskNode]] = []
-        current_layer = [
-            all_nodes[node_id]
-            for node_id, deg in in_degree.items()
-            if deg == 0
-        ]
+        current_layer = [all_nodes[node_id] for node_id, deg in in_degree.items() if deg == 0]
 
         while current_layer:
             layers.append(current_layer)
@@ -320,9 +301,7 @@ class TaskNode:
         remaining = [node_id for node_id, deg in in_degree.items() if deg > 0]
         if remaining:
             names = [all_nodes[node_id]._name for node_id in remaining]
-            raise CyclicDependencyError(
-                f"执行时检测到环（bind 时未捕获）: {names}"
-            )
+            raise CyclicDependencyError(f"执行时检测到环（bind 时未捕获）: {names}")
 
         return layers
 
@@ -343,9 +322,7 @@ class TaskNode:
                 kwargs[slot_name] = results[id(value)]
             elif isinstance(value, OutputRef):
                 parent_result = results[id(value._node)]
-                kwargs[slot_name] = _resolve_selector(
-                    parent_result, value._selector
-                )
+                kwargs[slot_name] = _resolve_selector(parent_result, value._selector)
             else:
                 kwargs[slot_name] = value
 
@@ -411,9 +388,7 @@ class TaskNode:
             return [self.execute(inputs) for inputs in inputs_list]
 
         cfg = config if config is not None else ParallelConfig()
-        with ThreadParallelWorkflow(
-            cfg, progress_monitor=progress_manager, name=name
-        ) as workflow:
+        with ThreadParallelWorkflow(cfg, progress_monitor=progress_manager, name=name) as workflow:
             return workflow.map(self.execute, inputs_list)
 
     # ------------------------------------------------------------------
@@ -442,7 +417,4 @@ class TaskNode:
         bound = ", ".join(self._bindings.keys())
         missing = ", ".join(self._missing.keys())
         executed = "executed" if self._executed else "pending"
-        return (
-            f"TaskNode({self._name!r}, "
-            f"bound=[{bound}], missing=[{missing}], {executed})"
-        )
+        return f"TaskNode({self._name!r}, bound=[{bound}], missing=[{missing}], {executed})"

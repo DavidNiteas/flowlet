@@ -5,13 +5,12 @@ from typing import Any, ForwardRef, TypeVar, Union, get_args, get_origin
 
 
 class TypeKind(Enum):
-
-    BARE_CLASS = auto()      # 裸类：int, str, list, MyClass（就是类本身）
-    GENERIC_ALIAS = auto()     # 泛型：list[str], dict[int, str]（Python 3.9+）
-    UNION_TYPE = auto()        # 联合：str | int, Optional[str]（Python 3.10+）
-    TYPING_FORM = auto()       # typing 特殊形式：Any, NoReturn, TypeVar, ForwardRef
-    INSTANCE = auto()          # 实例：123, "hello", []
-    UNKNOWN = auto()           # 未知（如模块、函数等不好分类的）
+    BARE_CLASS = auto()  # 裸类：int, str, list, MyClass（就是类本身）
+    GENERIC_ALIAS = auto()  # 泛型：list[str], dict[int, str]（Python 3.9+）
+    UNION_TYPE = auto()  # 联合：str | int, Optional[str]（Python 3.10+）
+    TYPING_FORM = auto()  # typing 特殊形式：Any, NoReturn, TypeVar, ForwardRef
+    INSTANCE = auto()  # 实例：123, "hello", []
+    UNKNOWN = auto()  # 未知（如模块、函数等不好分类的）
 
 
 def classify_object(obj) -> TypeKind:
@@ -34,12 +33,12 @@ def classify_object(obj) -> TypeKind:
     # 注意：这必须在检查 BARE_CLASS 之前，因为在 Python 3.11+ 中 typing.Any 的 isinstance(Any, type) 为 True
 
     # 检查是否有 __origin__ 或 __args__（typing.List[str], Union[str, int] 等）
-    if hasattr(obj, '__origin__') or hasattr(obj, '__args__'):
+    if hasattr(obj, "__origin__") or hasattr(obj, "__args__"):
         # 但有 origin 的不一定是 typing 形式，可能是 GenericAlias（已处理）
         return TypeKind.TYPING_FORM
 
     # 补漏：typing._SpecialForm（Any, NoReturn 等没有 __origin__ 的）
-    if type(obj).__module__ == 'typing':
+    if type(obj).__module__ == "typing":
         return TypeKind.TYPING_FORM
 
     # 4. 检查是否是 TypeVar 或 ForwardRef（它们没有 __origin__）
@@ -60,6 +59,7 @@ def classify_object(obj) -> TypeKind:
 # =============================================================================
 # 基于 TypeKind 的辅助函数
 # =============================================================================
+
 
 def _is_union_typing_form(obj) -> bool:
     """检查是否是 typing.Union 或 typing.Optional 等 Union 形式的 typing 对象"""
@@ -131,6 +131,7 @@ def _iter_type_components(annotation: Any):
 # =============================================================================
 # 主要 API 函数（基于 TypeKind 重写，保持接口不变）
 # =============================================================================
+
 
 def get_class_from_annotation(annotation) -> type | None:
     """
@@ -219,10 +220,7 @@ def unwrap_type(annotation) -> list[type]:
     raise TypeError(f"Unsupported type object: {annotation} (type: {type(annotation).__name__})")
 
 
-def is_subclass_in_annotation(
-    annotation: Any,
-    target_class: type
-) -> bool:
+def is_subclass_in_annotation(annotation: Any, target_class: type) -> bool:
     """判断FieldInfo的annotation中是否包含target_class的子类或自身
 
     Args:
@@ -287,13 +285,10 @@ def is_subclass_in_annotation(
     return False
 
 
-T = TypeVar('T', bound=type)
+T = TypeVar("T", bound=type)
 
 
-def extract_target_subclass_from_annotation(
-    annotation: Any,
-    target_class: T
-) -> T | None:
+def extract_target_subclass_from_annotation(annotation: Any, target_class: T) -> T | None:
     """从annotation中抽取target_class的子类或自身
 
     Args:
@@ -358,10 +353,7 @@ def extract_target_subclass_from_annotation(
     return None
 
 
-def is_instance_in_annotation(
-    instance: Any,
-    annotation: Any
-) -> bool:
+def is_instance_in_annotation(instance: Any, annotation: Any) -> bool:
     """判断某个实例是否是annotation所标注的类的实例或者子类实例
     类似于isinstance，但支持复杂的类型注解
 
@@ -440,8 +432,7 @@ def is_instance_in_annotation(
                 else:
                     key_type, value_type = args
                     if all(
-                        is_instance_in_annotation(k, key_type)
-                        and is_instance_in_annotation(v, value_type)
+                        is_instance_in_annotation(k, key_type) and is_instance_in_annotation(v, value_type)
                         for k, v in instance.items()
                     ):
                         return True

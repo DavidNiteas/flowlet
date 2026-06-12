@@ -8,16 +8,15 @@ from .dict_config import DictConfigBehavior
 
 
 class BranchConfigBehavior(DictConfigBehavior):
-
-    configs_type: ClassVar[dict[str, Union[DictConfigBehavior, 'BranchConfigBehavior']]] = {}
+    configs_type: ClassVar[dict[str, Union[DictConfigBehavior, "BranchConfigBehavior"]]] = {}
 
     method_name: str
-    configs: dict[str, Union[DictConfigBehavior, 'BranchConfigBehavior']] = Field(
+    configs: dict[str, Union[DictConfigBehavior, "BranchConfigBehavior"]] = Field(
         default={},
         description="分支配置项",
     )
 
-    def __init__(self,*args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for config_name, config_type in self.configs_type.items():
             if config_name not in self.configs:
@@ -34,7 +33,7 @@ class BranchConfigBehavior(DictConfigBehavior):
         if "method_name" in params:
             input_params["method_name"] = params["method_name"]
 
-        configs_params = params.get('configs', {})
+        configs_params = params.get("configs", {})
         configs = {}
         for config_name, config_type in cls.configs_type.items():
             if config_name in configs_params:
@@ -54,11 +53,11 @@ class BranchConfigBehavior(DictConfigBehavior):
         return cls(**input_params)
 
     @property
-    def config(self) -> Union[DictConfigBehavior, 'BranchConfigBehavior']:
+    def config(self) -> Union[DictConfigBehavior, "BranchConfigBehavior"]:
         return self.configs[self.method_name]
 
     @config.setter
-    def config(self, value: Union[DictConfigBehavior, 'BranchConfigBehavior']):
+    def config(self, value: Union[DictConfigBehavior, "BranchConfigBehavior"]):
         self.configs[self.method_name] = value
 
     def __getitem__(self, key: str):
@@ -69,7 +68,7 @@ class BranchConfigBehavior(DictConfigBehavior):
         else:
             return self.configs[key]
 
-    def __setitem__(self, key: str, value: Union[DictConfigBehavior, 'BranchConfigBehavior', str]):
+    def __setitem__(self, key: str, value: Union[DictConfigBehavior, "BranchConfigBehavior", str]):
         if key == "method_name":
             self.method_name = value
         elif key == "config":
