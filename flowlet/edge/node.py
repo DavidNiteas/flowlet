@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ..base.sentinel import Default
+from .asyncio_backend import AsyncioEdgeBackend
 from .backend import EdgeBackend
 from .config import EdgeConfig
 from .errors import DeadNodeError
@@ -129,6 +130,18 @@ class ThreadEdgeNode(EdgeNode):
         config: EdgeConfig | None = None,
     ) -> None:
         super().__init__(ThreadEdgeBackend, initializer=initializer, name=name, config=config)
+
+
+class AsyncioEdgeNode(EdgeNode):
+    """基于独立 asyncio event loop 线程的 EdgeNode。"""
+
+    def __init__(
+        self,
+        initializer: Callable[[], Any] | None = None,
+        name: str | None = None,
+        config: EdgeConfig | None = None,
+    ) -> None:
+        super().__init__(AsyncioEdgeBackend, initializer=initializer, name=name, config=config)
 
 
 class RayEdgeNode(EdgeNode):

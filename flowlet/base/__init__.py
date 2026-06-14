@@ -1,4 +1,15 @@
+from .coroutine import CoroutinePool, CoroutinePoolClosedError
 from .lazy import LazyHolder, LazyUnitConfig, LazyUnitKernel
+from .logs import (
+    BaseLogCollector,
+    BaseLogProxy,
+    FlowletLogHandler,
+    LogManager,
+    LogProxy,
+    LogRecordMessage,
+    MPLogProxy,
+    RayLogProxy,
+)
 from .progress import (
     BaseProgress,
     BaseProgressProxy,
@@ -12,6 +23,27 @@ from .progress import (
     UpdateProgressMessage,
 )
 from .sentinel import BaseHolder, Default, Emptyholder, Placeholder, Voidholder
+from .stream import (
+    BaseStreamCollector,
+    BaseStreamProxy,
+    MPStreamProxy,
+    RayStreamProxy,
+    StreamCapture,
+    StreamChunkMessage,
+    StreamManager,
+    StreamProxy,
+)
+from .telemetry import (
+    BaseTelemetryCollector,
+    BaseTelemetryProxy,
+    MPTelemetryProxy,
+    ProcessResourceSnapshot,
+    RayTelemetryProxy,
+    SystemResourceSnapshot,
+    TelemetryEvent,
+    TelemetryManager,
+    TelemetryProxy,
+)
 from .type_annotation import get_class_from_annotation
 
 __all__ = [
@@ -20,6 +52,8 @@ __all__ = [
     "Placeholder",
     "Emptyholder",
     "Voidholder",
+    "CoroutinePool",
+    "CoroutinePoolClosedError",
     "LazyHolder",
     "LazyUnitConfig",
     "LazyUnitKernel",
@@ -33,5 +67,30 @@ __all__ = [
     "RegisterTaskMessage",
     "UpdateProgressMessage",
     "TaskProgress",
+    "BaseLogCollector",
+    "BaseLogProxy",
+    "LogManager",
+    "MPLogProxy",
+    "RayLogProxy",
+    "LogProxy",
+    "LogRecordMessage",
+    "FlowletLogHandler",
+    "BaseStreamCollector",
+    "BaseStreamProxy",
+    "StreamManager",
+    "MPStreamProxy",
+    "RayStreamProxy",
+    "StreamProxy",
+    "StreamCapture",
+    "StreamChunkMessage",
+    "BaseTelemetryCollector",
+    "BaseTelemetryProxy",
+    "TelemetryManager",
+    "MPTelemetryProxy",
+    "RayTelemetryProxy",
+    "TelemetryProxy",
+    "TelemetryEvent",
+    "SystemResourceSnapshot",
+    "ProcessResourceSnapshot",
     "get_class_from_annotation",
 ]

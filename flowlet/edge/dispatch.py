@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 from collections.abc import Mapping
 from typing import Any
 
@@ -46,6 +47,34 @@ def _execute_target(
         result = target.bind_input(state, **kwargs).execute()
     elif callable(target):
         result = target(state, **kwargs)
+    else:
+        raise UnsupportedTargetError(f"EdgeNode 不支持的 target 类型: {type(target).__name__}")
+
+    if output is not None:
+        state[output] = result
+
+
+async def _execute_target_async(
+    state: dict[str, Any],
+    target: Any,
+    output: str | None,
+    kwargs: dict[str, Any],
+) -> None:
+    """Async-compatible variant of ``_execute_target``."""
+    if isinstance(target, TaskNode):
+        result = _execute_task_node(state, target, kwargs)
+    elif isinstance(target, ExecutableUnit):
+        bound = target.bind_input(state, **kwargs)
+        if hasattr(bound, "execute_asyncio"):
+            result = await bound.execute_asyncio()
+        else:
+            result = bound.execute()
+            if inspect.isawaitable(result):
+                result = await result
+    elif callable(target):
+        result = target(state, **kwargs)
+        if inspect.isawaitable(result):
+            result = await result
     else:
         raise UnsupportedTargetError(f"EdgeNode 不支持的 target 类型: {type(target).__name__}")
 

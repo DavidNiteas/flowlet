@@ -7,6 +7,7 @@ import threading
 import pytest
 from flowlet.compute_graph import InputSlot, InputVar, OutputSpec, TaskNode
 from flowlet.edge import (
+    AsyncioEdgeNode,
     DeadNodeError,
     EdgeConfig,
     RayEdgeNode,
@@ -17,6 +18,8 @@ from flowlet.edge._test_helpers import (
     AddKernel,
     DoubleWorkflow,
     add_value,
+    async_add_value,
+    async_set_value,
     lock_and_report,
     make_lock_state,
     multiply,
@@ -29,7 +32,7 @@ from flowlet.edge._test_helpers import (
 # ------------------------------------------------------------------
 # Fixtures
 # ------------------------------------------------------------------
-@pytest.fixture(params=["thread", "ray"])
+@pytest.fixture(params=["thread", "ray", "asyncio"])
 def backend(request):
     return request.param
 
@@ -37,7 +40,7 @@ def backend(request):
 @pytest.fixture
 def make_node(backend):
     def _make(initializer=None, **kwargs):
-        cls = ThreadEdgeNode if backend == "thread" else RayEdgeNode
+        cls = {"thread": ThreadEdgeNode, "ray": RayEdgeNode, "asyncio": AsyncioEdgeNode}[backend]
         return cls(initializer=initializer, **kwargs)
 
     return _make
@@ -72,6 +75,20 @@ class TestBasicIO:
     def test_output_none_for_side_effect(self, make_node):
         node = make_node(initializer=lambda: {"value": 0})
         node.apply(set_value, output=None, value=42)
+        node.join()
+        assert node.pull("value") == 42
+        node.kill()
+
+    def test_async_function_target(self):
+        node = AsyncioEdgeNode(initializer=lambda: {"value": 10})
+        node.apply(async_add_value, output="value", value=5)
+        node.join()
+        assert node.pull("value") == 15
+        node.kill()
+
+    def test_async_side_effect_target(self):
+        node = AsyncioEdgeNode(initializer=lambda: {"value": 0})
+        node.apply(async_set_value, output=None, value=42)
         node.join()
         assert node.pull("value") == 42
         node.kill()

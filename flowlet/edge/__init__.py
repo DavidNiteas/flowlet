@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
+from .asyncio_backend import AsyncioEdgeBackend
 from .backend import EdgeBackend
 from .config import EdgeConfig
 from .errors import BackendError, DeadNodeError, EdgeError, UnsupportedTargetError
-from .node import EdgeNode, RayEdgeNode, ThreadEdgeNode
+from .node import AsyncioEdgeNode, EdgeNode, RayEdgeNode, ThreadEdgeNode
 from .ray_backend import RayEdgeBackend
 from .thread_backend import ThreadEdgeBackend
 
@@ -21,7 +22,9 @@ __all__ = [
     "UnsupportedTargetError",
     "EdgeNode",
     "ThreadEdgeNode",
+    "AsyncioEdgeNode",
     "RayEdgeNode",
     "ThreadEdgeBackend",
+    "AsyncioEdgeBackend",
     "RayEdgeBackend",
 ]

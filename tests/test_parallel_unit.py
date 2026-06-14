@@ -20,24 +20,17 @@ from flowlet.parallel_unit import (
 def _ensure_ray_available() -> None:
     """当前环境不允许初始化 Ray 时跳过相关测试。"""
     try:
-        ray.init(local_mode=True, include_dashboard=False, log_to_driver=False)
+        ray.init(num_cpus=2, include_dashboard=False, log_to_driver=False)
         ray.shutdown()
+        deadline = time.time() + 5.0
+        while ray.is_initialized() and time.time() < deadline:
+            time.sleep(0.05)
     except Exception as exc:
         pytest.skip(f"Ray is unavailable in current environment: {exc}")
 
 
 def _wait_until_ready(workflow, future, timeout: float = 10.0) -> None:
     """等待 Ray 任务完成，避免固定 sleep 带来的脆弱性。"""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if workflow.is_ready(future):
-            return
-        time.sleep(0.1)
-    pytest.fail(f"Ray future did not become ready within {timeout} seconds")
-
-
-def _wait_until_ready(workflow, future, timeout: float = 10.0) -> None:
-    """等待 Ray 任务进入完成态，避免固定 sleep 带来的脆弱性。"""
     deadline = time.time() + timeout
     while time.time() < deadline:
         if workflow.is_ready(future):

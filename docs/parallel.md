@@ -2,13 +2,13 @@
 
 > [← 返回 README](../README.md) | [↑ 文档首页](index.md)
 
-`flowlet.parallel_unit` 模块提供统一的并行执行抽象，支持线程池和 Ray 两种后端。
+`flowlet.parallel_unit` 模块提供统一的并行执行抽象，支持线程池、协程池和 Ray 三类后端。
 
 ---
 
 ## ParallelConfig（并行配置）
 
-统一的并行工作流配置类，适用于线程池和 Ray 两种后端。
+统一的并行工作流配置类，适用于线程池、协程池和 Ray 三类后端。
 
 ```python
 from flowlet import ParallelConfig
@@ -81,6 +81,53 @@ with ThreadParallelWorkflow(max_concurrent_tasks=4) as workflow:
 - `submit_many(func, iterable)`：批量提交任务
 - `gather(futures)`：批量拉取结果
 - `map(func, iterable)`：同步批量处理（submit_many + gather）
+
+---
+
+## CoroutineParallelWorkflow（协程并行工作流）
+
+`CoroutineParallelWorkflow` 基于 `CoroutinePool`，在独立的 asyncio event loop 线程中执行 awaitable。它适合异步 IO 任务，也可以通过 `blocking=True` 把阻塞同步函数交给 `asyncio.to_thread`。
+
+```python
+import asyncio
+from flowlet import CoroutineParallelWorkflow, ParallelConfig
+
+async def fetch_one(i: int) -> str:
+    await asyncio.sleep(0.01)
+    return f"item-{i}"
+
+with CoroutineParallelWorkflow(ParallelConfig(max_concurrent_tasks=4)) as workflow:
+    future = workflow.submit(fetch_one, 1)
+    assert workflow.fetch(future) == "item-1"
+
+    results = workflow.map(fetch_one, range(3))
+    assert results == ["item-0", "item-1", "item-2"]
+
+    results = workflow.gather([fetch_one(3), fetch_one(4)])
+    assert results == ["item-3", "item-4"]
+```
+
+### 阻塞函数
+
+```python
+import time
+from flowlet import CoroutineParallelWorkflow
+
+def blocking_read(path: str) -> str:
+    time.sleep(0.1)
+    return path
+
+with CoroutineParallelWorkflow(max_concurrent_tasks=8) as workflow:
+    results = workflow.map(blocking_read, ["a.txt", "b.txt"], blocking=True)
+```
+
+### 后端选择
+
+| 后端 | 适合场景 | 说明 |
+|------|----------|------|
+| `ThreadParallelWorkflow` | 普通同步 IO、已有阻塞函数 | 基于 `ThreadPoolExecutor` |
+| `CoroutineParallelWorkflow` | 原生 async IO、awaitable 批量调度 | 使用独立 event loop，不占用调用方 loop |
+| `RayParallelWorkflow` | CPU/GPU 密集、跨进程/分布式 | 需要 Ray 可用，函数和参数需可序列化 |
 
 ---
 

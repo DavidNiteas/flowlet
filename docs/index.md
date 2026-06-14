@@ -10,7 +10,7 @@ Flowlet 是一个灵活的工作流和并行执行框架，提供了统一的抽
 
 1. **统一的可执行抽象**：所有可执行组件都继承自 `ExecutableUnit`，提供一致的执行接口
 2. **配置与逻辑分离**：配置系统独立于执行逻辑，支持灵活配置管理
-3. **并行透明**：提供线程和 Ray 两种并行后端，使用统一的接口
+3. **并行透明**：提供线程、协程和 Ray 三种并行后端，使用统一的接口
 4. **类型安全**：使用泛型和类型注解确保类型安全
 5. **组合优于继承**：通过配置组合和行为混入实现功能扩展
 
@@ -25,6 +25,7 @@ Flowlet 架构
 │   │   │   └── BaseStrategy (策略基类)
 │   │   └── Workflow (工作流)
 │   │       ├── ThreadParallelWorkflow
+│   │       ├── CoroutineParallelWorkflow
 │   │       ├── RayParallelWorkflow
 │   │       └── RayPoolCreatorWorkflow
 │   └── 类型注解工具
@@ -45,10 +46,15 @@ Flowlet 架构
 ├── Edge 模式
 │   ├── EdgeNode (节点抽象)
 │   │   ├── ThreadEdgeNode (同进程 worker 线程后端)
+│   │   ├── AsyncioEdgeNode (独立 asyncio loop 线程后端)
 │   │   └── RayEdgeNode (Ray Actor 后端)
 │   ├── EdgeBackend (后端抽象)
 │   ├── EdgeConfig (配置)
 │   └── push / pull / apply / bind / run / join / close / kill
+├── 有限状态机控制层
+│   ├── StateMachineSpec / TransitionSpec (静态定义)
+│   ├── FSMRuntime / TransitionRecord (运行时状态与历史)
+│   └── FSMEdgeNode (Thread / Asyncio / Ray 后端包装)
 ├── 进度管理
 │   ├── ProgressManager (进度监视器)
 │   │   ├── 同进程模式 (threading.RLock)
@@ -56,6 +62,10 @@ Flowlet 架构
 │   │   ├── 跨进程代理 (ray.util.queue.Queue → RayProgressProxy)
 │   │   └── 多后端共存
 │   └── TaskProgress (任务进度状态)
+├── 运行观测
+│   ├── LogManager / MPLogProxy / RayLogProxy
+│   ├── StreamManager / MPStreamProxy / RayStreamProxy
+│   └── TelemetryManager / MPTelemetryProxy / RayTelemetryProxy
 ├── 懒加载工具
 │   ├── LazyHolder (延迟值占位符)
 │   ├── LazyUnitConfig (懒加载配置)
@@ -81,10 +91,12 @@ Flowlet 架构
 | [分发器](dispatcher.md) | `Dispatcher` 分支执行 | `flowlet.dispatcher` |
 | [策略](strategy.md) | `BaseStrategy` / `@mount` 策略聚合 | `flowlet.strategy` |
 | [配置系统](config.md) | `BaseConfig` / `BaseConfigContainer` / `BaseBranchConfig` | `flowlet.config` |
-| [并行工作流](parallel.md) | `ThreadParallelWorkflow` / `RayParallelWorkflow` | `flowlet.parallel_unit` |
-| [Edge 模式](edge.md) | `ThreadEdgeNode` / `RayEdgeNode` | `flowlet.edge` |
+| [并行工作流](parallel.md) | `ThreadParallelWorkflow` / `CoroutineParallelWorkflow` / `RayParallelWorkflow` | `flowlet.parallel_unit` |
+| [Edge 模式](edge.md) | `ThreadEdgeNode` / `AsyncioEdgeNode` / `RayEdgeNode` | `flowlet.edge` |
+| [有限状态机](fsm.md) | `FSMEdgeNode` / `StateMachineSpec` / `TransitionSpec` | `flowlet.fsm` |
 | [进度管理](progress.md) | `ProgressManager` / `MPProgressProxy` / `RayProgressProxy` | `flowlet.base.progress` |
-| [基础工具](base.md) | 语义占位符 / 类型注解工具 | `flowlet.base` |
+| [运行观测](observability.md) | 日志 / stdout-stderr 流 / 遥测事件 | `flowlet.base.logs` / `stream` / `telemetry` |
+| [基础工具](base.md) | 协程池 / 语义占位符 / 类型注解工具 | `flowlet.base` |
 | [示例与最佳实践](examples.md) | 完整示例 / 最佳实践 / 注意事项 | — |
 
 ## 快速索引
@@ -95,5 +107,8 @@ Flowlet 架构
 - **构建任务图**：参考 [计算图](compute_graph.md)
 - **配置管理**：参考 [配置系统](config.md)
 - **并行执行**：参考 [并行工作流](parallel.md)
-- **持有不可序列化对象 / 手动进程控制**：参考 [Edge 模式](edge.md)
+- **异步 IO 并发**：参考 [并行工作流](parallel.md) 中的 `CoroutineParallelWorkflow`
+- **持有状态 / 手动进程控制**：参考 [Edge 模式](edge.md)
+- **状态机驱动节点**：参考 [有限状态机](fsm.md)
 - **进度跟踪**：参考 [进度管理](progress.md)
+- **日志、输出和资源指标汇聚**：参考 [运行观测](observability.md)

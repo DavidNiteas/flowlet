@@ -19,9 +19,11 @@ pixi install
 - **统一执行抽象**：`ExecutableUnit` / `Kernel` / `Workflow` 提供一致的业务逻辑封装
 - **分支分发**：`Dispatcher` 基于条件函数实现输入路由
 - **配置与逻辑分离**：`BaseConfig` / `BaseConfigContainer` / `BaseBranchConfig` 支持 JSON / TOML / MsgPack
-- **并行透明**：`ThreadParallelWorkflow`（IO 密集型）与 `RayParallelWorkflow`（CPU/GPU 密集型）统一接口
+- **并行透明**：`ThreadParallelWorkflow`（IO 密集型）、`CoroutineParallelWorkflow`（异步 IO）与 `RayParallelWorkflow`（CPU/GPU 密集型）统一接口
 - **跨进程进度**：`ProgressManager` + `MPProgressProxy` / `RayProgressProxy`，本地/多进程/Ray 三端汇聚
-- **Edge 模式**：`ThreadEdgeNode` / `RayEdgeNode` 提供有状态、命令式、异步执行的节点抽象，支持跨进程持有不可序列化对象
+- **Edge 模式**：`ThreadEdgeNode` / `AsyncioEdgeNode` / `RayEdgeNode` 提供有状态、命令式、异步执行的节点抽象
+- **FSM 控制层**：`FSMEdgeNode` 用有限状态机驱动 EdgeNode，支持事件、守卫、错误迁移和运行历史
+- **运行观测**：`LogManager` / `StreamManager` / `TelemetryManager` 汇聚日志、stdout/stderr 和资源/指标事件
 - **语义占位符**：`Default` / `Placeholder` / `Emptyholder` / `Voidholder` 精确表达空值语义
 
 ## 快速开始
@@ -57,9 +59,11 @@ with ThreadParallelWorkflow(max_concurrent_tasks=4) as wf:
 | `flowlet.dispatcher` | 条件分发器（Dispatcher） | [docs/dispatcher.md](docs/dispatcher.md) |
 | `flowlet.strategy` | 策略模式（BaseStrategy / @mount） | [docs/strategy.md](docs/strategy.md) |
 | `flowlet.config` | 配置系统（BaseConfig / BaseConfigContainer / BaseBranchConfig） | [docs/config.md](docs/config.md) |
-| `flowlet.parallel_unit` | 并行工作流（Thread / Ray / RayPoolCreator） | [docs/parallel.md](docs/parallel.md) |
-| `flowlet.edge` | Edge 模式（ThreadEdgeNode / RayEdgeNode） | [docs/edge.md](docs/edge.md) |
+| `flowlet.parallel_unit` | 并行工作流（Thread / Coroutine / Ray / RayPoolCreator） | [docs/parallel.md](docs/parallel.md) |
+| `flowlet.edge` | Edge 模式（ThreadEdgeNode / AsyncioEdgeNode / RayEdgeNode） | [docs/edge.md](docs/edge.md) |
+| `flowlet.fsm` | 有限状态机控制层（FSMEdgeNode / StateMachineSpec） | [docs/fsm.md](docs/fsm.md) |
 | `flowlet.base.progress` | 进度管理（ProgressManager / Proxy） | [docs/progress.md](docs/progress.md) |
+| `flowlet.base.logs` / `stream` / `telemetry` | 日志、输出流和遥测汇聚 | [docs/observability.md](docs/observability.md) |
 | `flowlet.base` | 基础工具（语义占位符 / 类型注解） | [docs/base.md](docs/base.md) |
 | — | 完整示例、最佳实践、注意事项 | [docs/examples.md](docs/examples.md) |
 

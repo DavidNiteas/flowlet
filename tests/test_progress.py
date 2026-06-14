@@ -442,134 +442,159 @@ class TestMPProgressProxy:
 # ==================== 测试6: RayProgressProxy ====================
 
 
+@pytest.mark.usefixtures("ray_initialized")
 class TestRayProgressProxy:
     """测试 RayProgressProxy 跨进程代理（Ray 后端）。"""
 
     def test_proxy_shares_interface_with_monitor(self):
         """测试 Ray Proxy 和 Monitor 共享 BaseProgress 接口。"""
         monitor = ProgressManager()
-        proxy = monitor.get_ray_proxy()
+        try:
+            proxy = monitor.get_ray_proxy()
 
-        assert isinstance(proxy, BaseProgress)
-        assert isinstance(proxy, BaseProgressProxy)
-        assert isinstance(proxy, RayProgressProxy)
+            assert isinstance(proxy, BaseProgress)
+            assert isinstance(proxy, BaseProgressProxy)
+            assert isinstance(proxy, RayProgressProxy)
+        finally:
+            monitor.close()
 
     def test_proxy_local_operations(self):
         """测试 Ray Proxy 本地操作不依赖 IPC。"""
         monitor = ProgressManager()
-        proxy = monitor.get_ray_proxy()
+        try:
+            proxy = monitor.get_ray_proxy()
 
-        proxy.register_task("local", "Local Task", total=10)
-        proxy.update_progress("local", current=5)
+            proxy.register_task("local", "Local Task", total=10)
+            proxy.update_progress("local", current=5)
 
-        prog = proxy.get_progress("local")
-        assert prog is not None
-        assert prog.current == 5
+            prog = proxy.get_progress("local")
+            assert prog is not None
+            assert prog.current == 5
+        finally:
+            monitor.close()
 
     def test_proxy_ipc_sync(self):
         """测试 Ray Proxy 写操作通过 IPC 同步到 Monitor。"""
         monitor = ProgressManager()
-        proxy = monitor.get_ray_proxy()
+        try:
+            proxy = monitor.get_ray_proxy()
 
-        proxy.register_task("ipc_task", "IPC Task", total=100)
-        time.sleep(0.3)
+            proxy.register_task("ipc_task", "IPC Task", total=100)
+            time.sleep(0.3)
 
-        prog = monitor.get_progress("ipc_task")
-        assert prog is not None
-        assert prog.description == "IPC Task"
+            prog = monitor.get_progress("ipc_task")
+            assert prog is not None
+            assert prog.description == "IPC Task"
 
-        proxy.update_progress("ipc_task", current=50, status="running")
-        time.sleep(0.3)
+            proxy.update_progress("ipc_task", current=50, status="running")
+            time.sleep(0.3)
 
-        prog = monitor.get_progress("ipc_task")
-        assert prog.current == 50
-        assert prog.status == "running"
+            prog = monitor.get_progress("ipc_task")
+            assert prog.current == 50
+            assert prog.status == "running"
+        finally:
+            monitor.close()
 
     def test_proxy_increment_ipc_sync(self):
         """测试 Ray Proxy 累加模式通过 IPC 同步到 Manager。"""
         monitor = ProgressManager()
-        proxy = monitor.get_ray_proxy()
+        try:
+            proxy = monitor.get_ray_proxy()
 
-        proxy.register_task("inc_task", "Increment Task", total=100)
-        time.sleep(0.3)
+            proxy.register_task("inc_task", "Increment Task", total=100)
+            time.sleep(0.3)
 
-        proxy.update_progress("inc_task", current=10)
-        time.sleep(0.2)
-        assert monitor.get_progress("inc_task").current == 10
+            proxy.update_progress("inc_task", current=10)
+            time.sleep(0.2)
+            assert monitor.get_progress("inc_task").current == 10
 
-        proxy.update_progress("inc_task", current=25, mode="increment")
-        time.sleep(0.2)
-        assert monitor.get_progress("inc_task").current == 35
+            proxy.update_progress("inc_task", current=25, mode="increment")
+            time.sleep(0.2)
+            assert monitor.get_progress("inc_task").current == 35
 
-        proxy.update_progress("inc_task", current=10, mode="increment")
-        time.sleep(0.2)
-        assert monitor.get_progress("inc_task").current == 45
+            proxy.update_progress("inc_task", current=10, mode="increment")
+            time.sleep(0.2)
+            assert monitor.get_progress("inc_task").current == 45
+        finally:
+            monitor.close()
 
     def test_proxy_snapshot(self):
         """测试 Ray Proxy 创建时 snapshot Monitor 状态。"""
         monitor = ProgressManager()
-        monitor.register_task("pre", "Pre-existing", total=50)
-        monitor.update_progress("pre", current=25)
+        try:
+            monitor.register_task("pre", "Pre-existing", total=50)
+            monitor.update_progress("pre", current=25)
 
-        proxy = monitor.get_ray_proxy()
+            proxy = monitor.get_ray_proxy()
 
-        prog = proxy.get_progress("pre")
-        assert prog is not None
-        assert prog.current == 25
+            prog = proxy.get_progress("pre")
+            assert prog is not None
+            assert prog.current == 25
+        finally:
+            monitor.close()
 
     def test_ray_proxy_serialization(self, ray_initialized):
         """测试 RayProgressProxy 经 ray.put/ray.get 后 queue 仍然有效。"""
         import ray
 
         monitor = ProgressManager()
-        proxy = monitor.get_ray_proxy()
-        proxy.register_task("ray_task", "Ray Task", total=10)
+        try:
+            proxy = monitor.get_ray_proxy()
+            proxy.register_task("ray_task", "Ray Task", total=10)
 
-        # 通过 Ray object store 传递
-        ref = ray.put(proxy)
-        proxy_restored = ray.get(ref)
+            # 通过 Ray object store 传递
+            ref = ray.put(proxy)
+            proxy_restored = ray.get(ref)
 
-        assert isinstance(proxy_restored, RayProgressProxy)
-        assert proxy_restored._queue is not None
+            assert isinstance(proxy_restored, RayProgressProxy)
+            assert proxy_restored._queue is not None
 
-        # 通过 Ray 远程函数传递
-        @ray.remote
-        def worker(p):
-            p.update_progress("ray_task", current=5, status="running")
-            return "ok"
+            # 通过 Ray 远程函数传递
+            @ray.remote
+            def worker(p):
+                p.update_progress("ray_task", current=5, status="running")
+                return "ok"
 
-        result = ray.get(worker.remote(proxy_restored))
-        assert result == "ok"
+            result = ray.get(worker.remote(proxy_restored))
+            assert result == "ok"
 
-        time.sleep(0.3)
-        prog = monitor.get_progress("ray_task")
-        assert prog is not None
-        assert prog.current == 5
-        assert prog.status == "running"
+            time.sleep(0.3)
+            prog = monitor.get_progress("ray_task")
+            assert prog is not None
+            assert prog.current == 5
+            assert prog.status == "running"
+        finally:
+            monitor.close()
 
     def test_ray_queue_created_on_demand(self):
         """测试 Ray Queue 在获取代理时才按需创建。"""
         monitor = ProgressManager()
-        assert monitor._ray_queue is None
+        try:
+            assert monitor._ray_queue is None
 
-        monitor.get_ray_proxy()
-        assert monitor._ray_queue is not None
-        assert monitor._consumer_threads
+            monitor.get_ray_proxy()
+            assert monitor._ray_queue is not None
+            assert monitor._consumer_threads
+        finally:
+            monitor.close()
 
     def test_proxy_display(self):
         """测试 Ray Proxy 可以独立启动显示。"""
         monitor = ProgressManager()
-        proxy = monitor.get_ray_proxy()
+        try:
+            proxy = monitor.get_ray_proxy()
 
-        proxy.start_display()
-        time.sleep(0.2)
-        assert proxy.is_displaying()
+            proxy.start_display()
+            time.sleep(0.2)
+            assert proxy.is_displaying()
 
-        proxy.register_task("proxy_task", "Proxy Task", total=100)
-        time.sleep(0.1)
+            proxy.register_task("proxy_task", "Proxy Task", total=100)
+            time.sleep(0.1)
 
-        proxy.stop_display()
-        assert not proxy.is_displaying()
+            proxy.stop_display()
+            assert not proxy.is_displaying()
+        finally:
+            monitor.close()
 
 
 # ==================== 测试7: ProgressManager 多后端共存 ====================
@@ -578,26 +603,29 @@ class TestRayProgressProxy:
 class TestProgressManagerMultiBackend:
     """测试 ProgressManager 同时支持 MP 和 Ray 后端。"""
 
-    def test_both_proxies_can_coexist(self):
+    def test_both_proxies_can_coexist(self, ray_initialized):
         """测试同时创建 MP 和 Ray 代理。"""
         monitor = ProgressManager()
-        monitor.register_task("shared", "Shared Task", total=100)
+        try:
+            monitor.register_task("shared", "Shared Task", total=100)
 
-        mp_proxy = monitor.get_mp_proxy()
-        ray_proxy = monitor.get_ray_proxy()
+            mp_proxy = monitor.get_mp_proxy()
+            ray_proxy = monitor.get_ray_proxy()
 
-        assert isinstance(mp_proxy, MPProgressProxy)
-        assert isinstance(ray_proxy, RayProgressProxy)
+            assert isinstance(mp_proxy, MPProgressProxy)
+            assert isinstance(ray_proxy, RayProgressProxy)
 
-        mp_proxy.update_progress("shared", current=30)
-        ray_proxy.update_progress("shared", current=70)
+            mp_proxy.update_progress("shared", current=30)
+            ray_proxy.update_progress("shared", current=70)
 
-        time.sleep(0.5)
+            time.sleep(0.5)
 
-        prog = monitor.get_progress("shared")
-        assert prog is not None
-        # 两个 queue 的消息都应被消费
-        assert prog.current in (30, 70)
+            prog = monitor.get_progress("shared")
+            assert prog is not None
+            # 两个 queue 的消息都应被消费
+            assert prog.current in (30, 70)
+        finally:
+            monitor.close()
 
     def test_multiple_mp_proxies_share_queue(self):
         """测试多次获取 MP 代理共享同一个 queue。"""

@@ -4,10 +4,11 @@
 
 Edge 模式是 flowlet 中一套**有状态、命令式、异步执行**的节点抽象。每个 `EdgeNode` 对应一个真实执行后端：
 
-- `ThreadEdgeNode`：同进程 worker 线程，无需序列化，适合本地事件循环。
+- `ThreadEdgeNode`：同进程 worker 线程，无需序列化，适合同步任务和调试。
+- `AsyncioEdgeNode`：独立 asyncio event loop 线程，支持 awaitable initializer / target，适合异步 IO 状态节点。
 - `RayEdgeNode`：独立 Ray Actor，可跨进程持有不可序列化对象。
 
-两种后端共享同一套 API，区别仅在于：Ray 跨进程需要序列化，Thread 后端不需要。
+三种后端共享同一套 API，区别在于执行位置、是否支持 awaitable、是否跨进程序列化。
 
 ---
 
@@ -17,7 +18,8 @@ Edge 模式是 flowlet 中一套**有状态、命令式、异步执行**的节�
 |------|----------|
 | 需要持有不可序列化的 C 对象 / 大模型句柄 | `RayEdgeNode` |
 | 想手动控制数据存在哪个进程 | `RayEdgeNode` |
-| 本地事件循环、快速调试、无需跨进程 | `ThreadEdgeNode` |
+| 本地同步逻辑、快速调试、无需跨进程 | `ThreadEdgeNode` |
+| async initializer / async target / 异步 IO 状态节点 | `AsyncioEdgeNode` |
 | 中间产物不可序列化，但想持续操作它 | `RayEdgeNode` |
 
 如果你要的是**声明式、无状态、一次性执行完整 DAG**，请使用 [`flowlet.compute_graph`](compute_graph.md)。
@@ -47,12 +49,25 @@ EdgeNode  ──remote──>  Worker / Actor
 ## 快速开始
 
 ```python
-from flowlet.edge import ThreadEdgeNode, RayEdgeNode
+import asyncio
+from flowlet.edge import ThreadEdgeNode, AsyncioEdgeNode, RayEdgeNode
 
 # Thread 后端：同进程，无需序列化
 node = ThreadEdgeNode(initializer=lambda: {"value": 0})
 node.apply(lambda state, x: state.update(value=state["value"] + x) or state["value"],
            output="value", x=10)
+node.join()
+print(node.pull("value"))  # 10
+node.close()
+
+# Asyncio 后端：在独立 event loop 线程中执行 awaitable
+async def async_add(state, x):
+    await asyncio.sleep(0.01)
+    state["value"] = state.get("value", 0) + x
+    return state["value"]
+
+node = AsyncioEdgeNode(initializer=lambda: {"value": 0})
+node.apply(async_add, output="value", x=10)
 node.join()
 print(node.pull("value"))  # 10
 node.close()
@@ -77,6 +92,12 @@ ThreadEdgeNode(
     initializer=None,   # Callable[[], Any]，在 worker 线程中执行，返回初始 state
     name=None,          # 节点名称
     config=None,        # EdgeConfig 实例
+)
+
+AsyncioEdgeNode(
+    initializer=None,   # Callable[[], Any]，可返回 awaitable
+    name=None,
+    config=None,
 )
 
 RayEdgeNode(
@@ -155,15 +176,16 @@ with RayEdgeNode(initializer=...) as node:
 
 ---
 
-## Thread 后端 vs Ray 后端
+## Thread / Asyncio / Ray 后端对比
 
-| 特性 | ThreadEdgeNode | RayEdgeNode |
-|---|---|---|
-| 进程位置 | 同进程 | 独立进程 |
-| state 序列化 | 不需要 | 函数调用参数需要 |
-| 可拉不可序列化对象 | 可以 | 不可以（会抛序列化错误） |
-| 资源隔离 | 无 | 有（num_cpus / num_gpus / memory） |
-| 适用场景 | 本地事件循环、调试 | 持有 C 对象、大模型、跨进程并行 |
+| 特性 | ThreadEdgeNode | AsyncioEdgeNode | RayEdgeNode |
+|---|---|---|---|
+| 执行位置 | 同进程 worker 线程 | 同进程 event loop 线程 | 独立 Ray Actor 进程 |
+| awaitable target | 不支持 | 支持 | 不支持 |
+| state 序列化 | 不需要 | 不需要 | 跨进程参数/返回值需要 |
+| 可拉不可序列化对象 | 可以 | 可以 | 不可以（会抛序列化错误） |
+| 资源隔离 | 无 | 无 | 有（num_cpus / num_gpus / memory） |
+| 适用场景 | 同步逻辑、调试 | async IO、有状态异步节点 | 持有 C 对象、大模型、跨进程并行 |
 
 ---
 
@@ -208,6 +230,7 @@ node.close()
 3. **state 是 namespace dict**：函数通过 `state[key]` 访问节点已有数据；调用时传入的 kwargs 是“现在才给”的数据。
 4. **TaskNode 图可复用**：同一张图 `bind` 后多次 `run`，每次都会重新执行（内部会自动深拷贝并清空缓存）。
 5. **异常传播**：`apply` 内部抛出的异常会在 `join()` 时抛出；`kill()` 会丢弃 pending，不会传播异常。
+6. **异步函数选择 Asyncio 后端**：`ThreadEdgeNode` 和 `RayEdgeNode` 使用同步分发；异步 target 建议使用 `AsyncioEdgeNode`。
 
 ---
 

@@ -2,7 +2,46 @@
 
 > [← 返回 README](../README.md) | [↑ 文档首页](index.md)
 
-`flowlet.base` 模块提供语义占位符、懒加载工具和类型注解工具，是框架的基础设施。
+`flowlet.base` 模块提供协程池、语义占位符、懒加载工具、类型注解工具和观测基础设施，是框架的基础设施。
+
+---
+
+## 协程池
+
+`CoroutinePool` 在独立线程中持有私有 asyncio event loop，为同步代码提供 `Future` 风格接口。它不会复用调用方线程的 event loop，适合把 async IO 接入同步工作流、Edge 后端或测试代码。
+
+```python
+import asyncio
+from flowlet import CoroutinePool
+
+async def load(i: int) -> int:
+    await asyncio.sleep(0.01)
+    return i * 2
+
+with CoroutinePool(max_concurrency=2) as pool:
+    future = pool.submit(load, 21)
+    assert future.result() == 42
+
+    results = pool.gather([load(1), load(2), load(3)])
+    assert results == [2, 4, 6]
+```
+
+同步阻塞函数可通过 `blocking=True` 交给 `asyncio.to_thread`：
+
+```python
+def read_file(path: str) -> str:
+    with open(path) as f:
+        return f.read()
+
+with CoroutinePool(max_concurrency=4) as pool:
+    texts = pool.map(read_file, ["a.txt", "b.txt"], blocking=True)
+```
+
+生命周期：
+
+- `join(timeout=None)`：等待当前 pending 任务完成，并传播已完成任务中的第一个异常
+- `close(wait_tasks=True)`：优雅关闭 event loop 线程
+- `kill()`：取消 pending 任务并停止 event loop
 
 ---
 

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from typing import Any
@@ -18,6 +19,12 @@ def make_lock_state() -> dict[str, Any]:
 
 
 def add_value(state: dict[str, Any], value: int) -> int:
+    state["value"] = state.get("value", 0) + value
+    return state["value"]
+
+
+async def async_add_value(state: dict[str, Any], value: int) -> int:
+    await asyncio.sleep(0.01)
     state["value"] = state.get("value", 0) + value
     return state["value"]
 
@@ -47,6 +54,11 @@ def raise_error(state: dict[str, Any]) -> None:
 
 
 def set_value(state: dict[str, Any], value: int) -> None:
+    state["value"] = value
+
+
+async def async_set_value(state: dict[str, Any], value: int) -> None:
+    await asyncio.sleep(0.01)
     state["value"] = value
 
 

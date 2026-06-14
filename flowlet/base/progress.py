@@ -535,6 +535,32 @@ class ProgressManager(BaseProgress):
         self._ray_queue = None
         self._consumer_threads = []
 
+    def close(self) -> None:
+        """Stop display and IPC consumer threads."""
+        self.stop_display()
+        if self._mp_queue is not None:
+            with suppress(Exception):
+                self._mp_queue.put(None)
+        if self._ray_queue is not None:
+            with suppress(Exception):
+                self._ray_queue.put(None)
+        for thread in list(self._consumer_threads):
+            if thread.is_alive():
+                thread.join(timeout=2.0)
+        self._consumer_threads = []
+        self._mp_queue = None
+        self._ray_queue = None
+
+    def __enter__(self) -> ProgressManager:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        with suppress(Exception):
+            self.close()
+
     # ---- 实现抽象写方法 ----
 
     def register_task(self, task_id: str, description: str, total: int = 0) -> str:
@@ -628,6 +654,10 @@ class ProgressManager(BaseProgress):
         """Ray IPC 消费线程：从 Ray Queue 读取消息并应用到本地状态。"""
         while True:
             try:
+                import ray
+
+                if not ray.is_initialized():
+                    break
                 msg = self._ray_queue.get(block=True, timeout=0.5)
             except Empty:
                 continue
