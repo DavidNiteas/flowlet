@@ -193,6 +193,43 @@ class Scheduler:
         with self._lock:
             return self._runtime[name]
 
+    def snapshot(self) -> dict[str, Any]:
+        """Return a serializable read-only scheduler snapshot."""
+        self._collect_finished()
+        signals = self.signal_pool.snapshot()
+        signal_version = self.signal_pool.version
+        with self._lock:
+            actions = []
+            for action in self._actions.values():
+                runtime = self._runtime[action.name]
+                triggered = True if action.trigger is None else action.trigger(signals)
+                actions.append(
+                    {
+                        "name": action.name,
+                        "backend": action.backend,
+                        "mode": action.mode,
+                        "lifecycle_signal": action.lifecycle_signal,
+                        "result_signal": action.result_signal,
+                        "max_runs": action.max_runs,
+                        "status": runtime.status,
+                        "runs": runtime.runs,
+                        "last_error": runtime.last_error,
+                        "last_result": _dashboard_value(runtime.last_result),
+                        "last_trigger_version": runtime.last_trigger_version,
+                        "running": runtime.future is not None or runtime.status == "running",
+                        "triggered": triggered,
+                        "can_run_more": self._can_run_more(action, runtime),
+                    }
+                )
+        return {
+            "name": self.name,
+            "poll_interval": self.poll_interval,
+            "running": self._thread is not None and self._thread.is_alive(),
+            "idle": self.idle,
+            "signal_version": signal_version,
+            "actions": actions,
+        }
+
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
             control = self.signal_pool.get(f"{self.name}.control")
@@ -401,6 +438,21 @@ def _future_result(future: Any, backend: ActionBackend) -> Any:
 
         return ray.get(future)
     return future.result()
+
+
+def _dashboard_value(value: Any) -> Any:
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    if isinstance(value, list | tuple):
+        return [_dashboard_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _dashboard_value(item) for key, item in value.items()}
+    if hasattr(value, "to_dict"):
+        try:
+            return value.to_dict()
+        except Exception:  # noqa: BLE001
+            return repr(value)
+    return repr(value)
 
 
 try:

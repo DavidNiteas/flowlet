@@ -29,11 +29,15 @@ from .base import (
     LogProxy,
     LogRecordMessage,
     MPLogProxy,
+    MPProgressProxy,
     MPStreamProxy,
     MPTelemetryProxy,
     Placeholder,
     ProcessResourceSnapshot,
+    ProgressManager,
+    ProgressProxy,
     RayLogProxy,
+    RayProgressProxy,
     RaySignalProxy,
     RayStreamProxy,
     RayTelemetryProxy,
@@ -52,6 +56,7 @@ from .base import (
     Voidholder,
 )
 from .config import BaseBranchConfig, BaseConfig, BaseConfigContainer, ConfigMap, ConfigSequence
+from .dashboard import DashboardServer, DashboardState
 from .dispatcher import Dispatcher
 from .edge import AsyncioEdgeBackend, AsyncioEdgeNode
 from .executable_unit import ExecutableUnit, ExecutionFuture, Kernel, Workflow
@@ -79,6 +84,10 @@ __all__ = [
     "LogManager",
     "MPLogProxy",
     "RayLogProxy",
+    "ProgressManager",
+    "MPProgressProxy",
+    "RayProgressProxy",
+    "ProgressProxy",
     "SignalStatus",
     "SignalState",
     "SignalUpdateMessage",
@@ -109,6 +118,8 @@ __all__ = [
     "BaseConfigContainer",
     "ConfigMap",
     "ConfigSequence",
+    "DashboardState",
+    "DashboardServer",
     "ExecutableUnit",
     "ExecutionFuture",
     "Kernel",
