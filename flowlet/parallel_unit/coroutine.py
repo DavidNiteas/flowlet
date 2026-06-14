@@ -72,10 +72,7 @@ class CoroutineParallelWorkflow(Workflow):
         futures: Iterable[Future | Awaitable[Any]],
         description: str = "Gathering results",
     ) -> list[Any]:
-        futures_list = [
-            item if isinstance(item, Future) else self.submit_awaitable(item)
-            for item in futures
-        ]
+        futures_list = [item if isinstance(item, Future) else self.submit_awaitable(item) for item in futures]
         if not futures_list:
             return []
 

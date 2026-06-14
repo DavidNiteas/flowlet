@@ -34,8 +34,13 @@ from .base import (
     Placeholder,
     ProcessResourceSnapshot,
     RayLogProxy,
+    RaySignalProxy,
     RayStreamProxy,
     RayTelemetryProxy,
+    SignalPool,
+    SignalState,
+    SignalStatus,
+    SignalUpdateMessage,
     StreamCapture,
     StreamChunkMessage,
     StreamManager,
@@ -58,6 +63,7 @@ from .parallel_unit import (
     RayPoolCreatorWorkflow,
     ThreadParallelWorkflow,
 )
+from .scheduler import ActionRuntime, ScheduledAction, Scheduler, execute_scheduled_target
 from .strategy import BaseStrategy, MountPoint, mount
 
 __all__ = [
@@ -73,6 +79,11 @@ __all__ = [
     "LogManager",
     "MPLogProxy",
     "RayLogProxy",
+    "SignalStatus",
+    "SignalState",
+    "SignalUpdateMessage",
+    "SignalPool",
+    "RaySignalProxy",
     "LogProxy",
     "LogRecordMessage",
     "FlowletLogHandler",
@@ -108,6 +119,10 @@ __all__ = [
     "CoroutineParallelWorkflow",
     "RayParallelWorkflow",
     "RayPoolCreatorWorkflow",
+    "ScheduledAction",
+    "ActionRuntime",
+    "Scheduler",
+    "execute_scheduled_target",
     "AsyncioEdgeNode",
     "AsyncioEdgeBackend",
     "FSMEdgeNode",

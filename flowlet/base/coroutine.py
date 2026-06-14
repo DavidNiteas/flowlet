@@ -209,6 +209,7 @@ class CoroutinePool:
         for future in pending:
             future.cancel()
         if self._loop is not None:
+
             def _cancel_and_stop() -> None:
                 for task in asyncio.all_tasks(self._loop):
                     task.cancel()

@@ -23,6 +23,7 @@ from .progress import (
     UpdateProgressMessage,
 )
 from .sentinel import BaseHolder, Default, Emptyholder, Placeholder, Voidholder
+from .signal import RaySignalProxy, SignalPool, SignalState, SignalStatus, SignalUpdateMessage
 from .stream import (
     BaseStreamCollector,
     BaseStreamProxy,
@@ -58,6 +59,11 @@ __all__ = [
     "LazyUnitConfig",
     "LazyUnitKernel",
     "BaseProgress",
+    "SignalStatus",
+    "SignalState",
+    "SignalUpdateMessage",
+    "SignalPool",
+    "RaySignalProxy",
     "BaseProgressProxy",
     "ProgressManager",
     "MPProgressProxy",
