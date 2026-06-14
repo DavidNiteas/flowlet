@@ -87,8 +87,15 @@ class BaseStreamCollector:
         self._append_local(chunk)
         self._send_chunk(chunk)
 
-    def capture(self, *, source: str | None = None, mode: StreamMode = "capture", **metadata: Any) -> StreamCapture:
-        return StreamCapture(self, source=source, mode=mode, metadata=metadata)
+    def capture(
+        self,
+        *,
+        source: str | None = None,
+        mode: StreamMode = "capture",
+        capture_fd: bool = False,
+        **metadata: Any,
+    ) -> StreamCapture:
+        return StreamCapture(self, source=source, mode=mode, capture_fd=capture_fd, metadata=metadata)
 
     def _append_local(self, chunk: StreamChunkMessage) -> None:
         with self._lock:
@@ -135,8 +142,83 @@ class _StreamWriter(io.TextIOBase):
             self.original.flush()
 
 
+class _FdCapture:
+    """Capture writes made directly to a process file descriptor."""
+
+    def __init__(
+        self,
+        collector: BaseStreamCollector,
+        stream: StreamName,
+        fd: int,
+        *,
+        source: str | None,
+        mode: StreamMode,
+        metadata: dict[str, Any],
+        encoding: str,
+        errors: str,
+    ) -> None:
+        self.collector = collector
+        self.stream = stream
+        self.fd = fd
+        self.source = source
+        self.mode = mode
+        self.metadata = metadata
+        self.encoding = encoding
+        self.errors = errors
+        self._saved_fd: int | None = None
+        self._read_fd: int | None = None
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        read_fd, write_fd = os.pipe()
+        saved_fd = os.dup(self.fd)
+        os.dup2(write_fd, self.fd)
+        os.close(write_fd)
+        self._read_fd = read_fd
+        self._saved_fd = saved_fd
+        self._thread = threading.Thread(target=self._read_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        if self._saved_fd is not None:
+            with suppress(OSError):
+                os.dup2(self._saved_fd, self.fd)
+            with suppress(OSError):
+                os.close(self._saved_fd)
+            self._saved_fd = None
+        if self._read_fd is not None:
+            with suppress(OSError):
+                os.close(self._read_fd)
+            self._read_fd = None
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+
+    def _read_loop(self) -> None:
+        if self._read_fd is None:
+            return
+        read_fd = self._read_fd
+        pending = ""
+        while True:
+            try:
+                data = os.read(read_fd, 4096)
+            except OSError:
+                break
+            if not data:
+                break
+            if self.mode == "tee" and self._saved_fd is not None:
+                with suppress(OSError):
+                    os.write(self._saved_fd, data)
+            pending += data.decode(self.encoding, errors=self.errors)
+            while "\n" in pending:
+                line, pending = pending.split("\n", 1)
+                self.collector.write_chunk(self.stream, line + "\n", source=self.source, **self.metadata)
+        if pending:
+            self.collector.write_chunk(self.stream, pending, source=self.source, **self.metadata)
+
+
 class StreamCapture(AbstractContextManager["StreamCapture"]):
-    """Context manager that captures Python-level sys.stdout/sys.stderr writes."""
+    """Context manager that captures Python and optional fd-level stdout/stderr writes."""
 
     def __init__(
         self,
@@ -144,20 +226,49 @@ class StreamCapture(AbstractContextManager["StreamCapture"]):
         *,
         source: str | None = None,
         mode: StreamMode = "capture",
+        capture_fd: bool = False,
         metadata: dict[str, Any] | None = None,
     ) -> None:
         self.collector = collector
         self.source = source
         self.mode = mode
+        self.capture_fd = capture_fd
         self.metadata = metadata or {}
         self._stdout: TextIO | None = None
         self._stderr: TextIO | None = None
+        self._fd_captures: list[_FdCapture] = []
 
     def __enter__(self) -> StreamCapture:
         if self.mode == "inherit":
             return self
         self._stdout = sys.stdout
         self._stderr = sys.stderr
+        if self.capture_fd:
+            self._flush_original_streams()
+            self._fd_captures = [
+                _FdCapture(
+                    self.collector,
+                    "stdout",
+                    1,
+                    source=self.source,
+                    mode=self.mode,
+                    metadata=self.metadata,
+                    encoding=getattr(self._stdout, "encoding", None) or "utf-8",
+                    errors=getattr(self._stdout, "errors", None) or "replace",
+                ),
+                _FdCapture(
+                    self.collector,
+                    "stderr",
+                    2,
+                    source=self.source,
+                    mode=self.mode,
+                    metadata=self.metadata,
+                    encoding=getattr(self._stderr, "encoding", None) or "utf-8",
+                    errors=getattr(self._stderr, "errors", None) or "replace",
+                ),
+            ]
+            for capture in self._fd_captures:
+                capture.start()
         sys.stdout = _StreamWriter(
             self.collector,
             "stdout",
@@ -177,11 +288,26 @@ class StreamCapture(AbstractContextManager["StreamCapture"]):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        self._flush_current_streams()
         if self._stdout is not None:
             sys.stdout = self._stdout
         if self._stderr is not None:
             sys.stderr = self._stderr
+        for capture in reversed(self._fd_captures):
+            capture.stop()
+        self._fd_captures.clear()
         return False
+
+    def _flush_original_streams(self) -> None:
+        for stream in (self._stdout, self._stderr):
+            if stream is not None:
+                with suppress(Exception):
+                    stream.flush()
+
+    def _flush_current_streams(self) -> None:
+        for stream in (sys.stdout, sys.stderr):
+            with suppress(Exception):
+                stream.flush()
 
 
 class BaseStreamProxy(BaseStreamCollector):

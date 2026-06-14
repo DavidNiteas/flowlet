@@ -61,6 +61,18 @@ def test_stream_manager_capture_stdout_stderr():
     assert all(chunk.source == "unit" for chunk in chunks)
 
 
+def test_stream_manager_capture_fd_stdout_stderr():
+    manager = StreamManager()
+    with manager.capture(source="unit-fd", mode="capture", capture_fd=True):
+        __import__("os").write(1, b"hello fd stdout\n")
+        __import__("os").write(2, b"hello fd stderr\n")
+
+    chunks = manager.get_chunks()
+    assert any(chunk.stream == "stdout" and "hello fd stdout" in chunk.text for chunk in chunks)
+    assert any(chunk.stream == "stderr" and "hello fd stderr" in chunk.text for chunk in chunks)
+    assert all(chunk.source == "unit-fd" for chunk in chunks)
+
+
 def test_ray_log_and_stream_proxies_roundtrip(ray_cluster):
     ray = ray_cluster
     log_manager = LogManager()
@@ -75,11 +87,14 @@ def test_ray_log_and_stream_proxies_roundtrip(ray_cluster):
         logs.info("ray log", run_id="ray-run")
         with streams.capture(source="ray-worker", mode="capture"):
             print("ray stdout")
+        with streams.capture(source="ray-worker-fd", mode="capture", capture_fd=True):
+            __import__("os").write(1, b"ray fd stdout\n")
         return "ok"
 
     assert ray.get(worker.remote(log_proxy, stream_proxy)) == "ok"
     assert _wait_until(lambda: any(record.message == "ray log" for record in log_manager.get_records()))
     assert _wait_until(lambda: any("ray stdout" in chunk.text for chunk in stream_manager.get_chunks()))
+    assert _wait_until(lambda: any("ray fd stdout" in chunk.text for chunk in stream_manager.get_chunks()))
     log_manager.close()
     stream_manager.close()
 
