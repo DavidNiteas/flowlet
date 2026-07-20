@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from typing import Any
 
-from flowlet.runtime import RuntimeInfo, RuntimeStore, list_runtime_artifacts, runtime_info_payload
+from flowlet.runtime import (
+    EventBuffer,
+    RuntimeInfo,
+    RuntimeSnapshotLoader,
+    RuntimeStore,
+    list_runtime_artifacts,
+    runtime_info_payload,
+)
 
 
 def test_runtime_info_payload_is_json_safe(tmp_path):
@@ -49,3 +58,92 @@ def test_runtime_store_writes_standard_files_and_lists_artifacts(tmp_path):
         "runtime/progress.json",
         "status.json",
     }
+
+
+@dataclass
+class ExampleEvent:
+    event_id: int
+    job_id: str
+    timestamp: float
+    event_type: str
+    payload: dict[str, Any]
+
+
+def _event_factory(
+    event_id: int,
+    job_id: str,
+    timestamp: float,
+    event_type: str,
+    payload: dict[str, Any],
+) -> ExampleEvent:
+    return ExampleEvent(event_id, job_id, timestamp, event_type, payload)
+
+
+def _event_loader(line: str) -> ExampleEvent:
+    payload = json.loads(line)
+    return ExampleEvent(**payload)
+
+
+def test_event_buffer_persists_and_restores_jsonl(tmp_path):
+    events_path = tmp_path / "events.jsonl"
+    buffer = EventBuffer(
+        "job1",
+        events_path,
+        event_factory=_event_factory,
+        event_loader=_event_loader,
+        event_id_getter=lambda event: event.event_id,
+        event_json_dumper=lambda event: json.dumps(event.__dict__, ensure_ascii=False),
+    )
+
+    first = buffer.emit("job_state", {"status": "running"})
+    second = buffer.emit("result", {"ok": True})
+    restored = EventBuffer.from_file(
+        "job1",
+        events_path,
+        event_factory=_event_factory,
+        event_loader=_event_loader,
+        event_id_getter=lambda event: event.event_id,
+        event_json_dumper=lambda event: json.dumps(event.__dict__, ensure_ascii=False),
+    )
+    restored.emit("job_state", {"status": "completed"})
+
+    assert first.event_id == 1
+    assert second.event_id == 2
+    assert [event.event_id for event in restored.list()] == [1, 2, 3]
+    assert [event.event_type for event in restored.list(since=1)] == ["result", "job_state"]
+
+
+def test_runtime_snapshot_loader_uses_monitor_snapshot_then_fallbacks(tmp_path):
+    store = RuntimeStore(tmp_path / "runtime")
+    store.write_runtime_info(
+        runtime_info_payload(
+            engine="ExampleEngine",
+            job_type="example.job",
+            job_id="job1",
+            status="completed",
+            runtime_dir=store.runtime_dir,
+        )
+    )
+    store.write_status({"job_id": "job1", "status": "completed", "total": 2})
+    store.write_snapshot({"job": {"job_id": "job1", "status": "completed", "total": 2}, "items": [1, 2]})
+
+    loader = RuntimeSnapshotLoader(
+        status_loader=json.loads,
+        snapshot_loader=json.loads,
+        monitor_loader=json.loads,
+        monitor_from_snapshot=lambda snapshot: {"source": "snapshot", "total": len(snapshot["items"])},
+        monitor_from_status=lambda status: {"source": "status", "total": status["total"]},
+    )
+    view = loader.load(store.runtime_dir)
+
+    assert view is not None
+    assert view.monitor == {"source": "snapshot", "total": 2}
+    assert view.snapshot is not None
+    assert view.runtime_info is not None
+    assert view.runtime_info["engine"] == "ExampleEngine"
+
+    store.write_monitor_snapshot({"source": "monitor", "total": 2})
+    view = loader.load(store.runtime_dir)
+
+    assert view is not None
+    assert view.monitor == {"source": "monitor", "total": 2}
