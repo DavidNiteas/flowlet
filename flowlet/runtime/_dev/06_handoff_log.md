@@ -4,6 +4,27 @@ This file records implementation progress for the runtime backend redesign.
 
 ## 2026-07-22
 
+### Current-Layout Regression Audit
+
+The real liver workspace was reclassified into two evidence levels:
+
+- Its persisted MetaMSTools and MassLib4Search directories are valid
+  reader-compatibility fixtures: legacy events, standard sidecars, and
+  projections all remain readable.
+- They are not current-writer fixtures. Both predate `runtime/processes.json`
+  and the reserved root `process.created` event at sidecar event id `0`.
+
+`validate_runtime_sidecar.py` now has `--require-current-layout`. In addition
+to sidecar validation it requires a non-empty process manifest, root
+declaration consistency, and a projection containing that root. Projection
+event count is intentionally bounded rather than exactly equal to JSONL count:
+append-only log and stream events do not trigger a projection rewrite.
+
+The required follow-up is a fresh, isolated execution against the real liver
+inputs. Do not overwrite `.metams/runtime`, an existing annotation id, or study
+results. Record the commands and artifact counts in
+[07_real_workspace_regression.md](07_real_workspace_regression.md).
+
 ### Completed
 
 - Added initial design document set under `flowlet/flowlet/runtime/_dev`.

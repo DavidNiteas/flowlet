@@ -50,13 +50,13 @@ Acceptance:
 - Every legacy event can be adapted to `RuntimeEvent`.
 - Missing sidecar files are allowed for historical runs.
 
-## New-Run Check
+## Current-Layout New-Run Check
 
-After rerunning MetaMSTools or MassLib4Search with the current code, use strict
-mode:
+After rerunning MetaMSTools or MassLib4Search with the current code, use both
+strict flags:
 
 ```bash
-pixi run -e dev-all-gpu python flowlet/flowlet/runtime/_dev/validate_runtime_sidecar.py --require-sidecar \
+pixi run -e dev-all-gpu python flowlet/flowlet/runtime/_dev/validate_runtime_sidecar.py --require-sidecar --require-current-layout \
   data/large_files/ms_exp_datas/900_human_metabolites_db/workspace/900_human_metabolites_liver/.metams/runtime \
   data/large_files/ms_exp_datas/900_human_metabolites_db/workspace/900_human_metabolites_liver/.annotation/spec_spec_unispec_pos/runtime
 ```
@@ -67,10 +67,18 @@ Acceptance:
 - Every legacy event can be adapted to `RuntimeEvent`.
 - Each target runtime directory has at least one standard sidecar event.
 - Every standard sidecar event validates as `RuntimeEvent`.
-- Each target runtime directory has `runtime/projection.json`, whose completed
-  job process is visible through the package runtime-snapshot reader.
+- Each target runtime directory has `runtime/processes.json` with its root
+  process declaration.
+- The first standard sidecar event is `event_id == 0` and
+  `event_type == "process.created"`; its `process_id` is declared in the
+  manifest.
+- Each target runtime directory has `runtime/projection.json`, whose root
+  process is visible through the package runtime-snapshot reader. Its event
+  count is positive and cannot exceed the sidecar count. Equality is not
+  required because append-only log and stream events do not force a projection
+  rewrite.
 
-## Current Observation
+## Migrating-Layout Observation
 
 Fresh workflows were executed against the target workspace after standard
 sidecar and projection persistence were added:
@@ -80,8 +88,9 @@ sidecar and projection persistence were added:
 .annotation/spec_spec_unispec_pos/runtime: 370 legacy events, 185 sidecar events, succeeded projection.
 ```
 
-Strict validation passes for both directories. Their projection-aware package
-readers report a completed job with 3 total, 3 completed, and 0 remaining.
+`--require-sidecar` validation passes for both directories. Their
+projection-aware package readers report a completed job with 3 total, 3
+completed, and 0 remaining.
 The annotation results remain under the study root at:
 
 ```text
@@ -113,7 +122,7 @@ Current result:
 
 ## Current Revalidation
 
-The strict validator and both CLI commands were rerun after the standard
+The sidecar validator and both CLI commands were rerun after the standard
 event-stream, client, vocabulary, and resource-observation additions.
 
 - Strict validation still reports 386 legacy / 94 standard events for
@@ -123,3 +132,17 @@ event-stream, client, vocabulary, and resource-observation additions.
   3 total, 3 completed, and 0 remaining.
 - This is a read-only regression of the persisted real sample; it does not
   rewrite its study output or runtime files.
+
+## Declaration Regression Gap
+
+On 2026-07-22, `--require-current-layout` correctly fails for both persisted
+directories: each has a valid legacy stream, sidecar, and projection, but no
+`runtime/processes.json` and no root declaration at sidecar event id `0`.
+These runs were created before root declarations were introduced. They remain
+valuable reader-compatibility fixtures, but are not evidence for the current
+writer contract.
+
+The next execution regression must use isolated runtime directories and retain
+the existing output untouched. It must record the exact commands, output paths,
+elapsed time, event counts, manifest content, and package snapshot-reader
+results in this document.
