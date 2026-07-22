@@ -82,6 +82,13 @@ persist it before launching the existing annotation executor. Existing sync
 and HTTP resume regressions pass. The business executor still owns actual
 pending-run scheduling; partial failure/retry evidence is the next test gap.
 
+That gap is now covered by the existing two-run fail-fast-false workflow
+regression. After a synthetic `run2` failure, the package adapter and Flowlet
+planner produce `skip(run1) -> retry(run2) -> resume(study)` with a committed
+run cursor. The business resume execution reuses `run1`, completes `run2`, and
+assembles both results. This validates the framework plan against the actual
+annotation FSM and persistence path, not only a synthetic manifest fixture.
+
 ### Current-Layout Regression Audit
 
 The real liver workspace was reclassified into two evidence levels:

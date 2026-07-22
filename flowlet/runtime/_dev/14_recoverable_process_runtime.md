@@ -119,11 +119,12 @@ new fields are optional or have backward-compatible defaults.
    `RuntimeProcessContext.commit_checkpoint()` and `invalidate_checkpoint()`
    are the only framework helpers that add/remove recoverable checkpoint
    references; the legacy `checkpoint()` helper remains telemetry-only.
-6. In progress: MetaMSTools and MassLib4Search package adapters produce
+6. Completed: MetaMSTools and MassLib4Search package adapters produce
    framework specs, source projections, and decisions from existing business
    artifacts. MetaMSTools dispatches missing runs through registered package
    processes; MassLib4Search persists a plan before its existing resume
-   executor starts. Partial MassLib4Search retry evidence remains pending.
+   executor starts. Package tests cover partial MassLib4Search retry and study
+   checkpoint continuation.
 7. Run isolated real-liver skip, failure/retry, and checkpoint-resume cases.
 
 ## Acceptance
@@ -166,3 +167,10 @@ the target job runtime before starting its thread or inline execution. The
 existing annotation executor remains the owner of pending-run scheduling and
 final study assembly. This avoids duplicating its FSM and output transaction
 semantics inside a generic Flowlet process hook.
+
+The MassLib4Search two-run failure regression now proves the complete package
+transition. It preserves a successful `run1`, records failed `run2`, builds a
+`skip(run1) -> retry(run2) -> resume(study)` plan with a committed-run cursor,
+then executes resume. The resulting manifest reports `run1` as
+`skipped_existing`, `run2` as completed from `resume_pending`, and the final
+aggregate contains both runs.
