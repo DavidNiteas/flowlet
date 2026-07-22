@@ -31,7 +31,7 @@ Confirm Flowlet runtime owns only framework-level concepts.
 
 ## Phase 1: RuntimeEvent Schema
 
-Status: in progress.
+Status: completed.
 
 ### Goal
 
@@ -57,6 +57,10 @@ Introduce a standard event envelope without replacing existing business events.
 ### Current Implementation Notes
 
 - `RuntimeEvent`, `RuntimeEventStatus`, `RuntimeStatusClass`, `RuntimeErrorInfo`, `RuntimeProgress`, and `runtime_event_payload` are introduced in `flowlet.runtime.schema`.
+- `RuntimeEventType` provides the recommended framework type vocabulary for
+  runtime/process/unit/FSM/artifact/observability events. It is intentionally
+  not a validator: `RuntimeEvent.event_type` remains an open string for custom
+  business event types.
 - The schema is intentionally business-neutral and accepts custom `event_type`, custom `status`, JSON-safe `payload`, and JSON-safe `metadata`.
 - Event storage, legacy `TxnEvent` adapters, and manager-to-event conversion are deferred to Phase 2.
 

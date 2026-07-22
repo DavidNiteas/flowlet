@@ -12,6 +12,7 @@ from flowlet.runtime import (
     RuntimeEventJsonlStore,
     RuntimeEventSidecarWriter,
     RuntimeEventStatus,
+    RuntimeEventType,
     RuntimeFrameworkReducer,
     RuntimeInfo,
     RuntimeManagerBundle,
@@ -141,6 +142,24 @@ def test_runtime_event_accepts_custom_status_and_error():
     assert payload["status"] == "domain_waiting"
     assert payload["status_class"] == "blocked"
     assert payload["error"]["retryable"] is True
+
+
+def test_runtime_event_type_vocabulary_is_recommended_but_event_types_remain_open():
+    standard = RuntimeEvent(
+        event_id=1,
+        runtime_id="runtime1",
+        event_type=RuntimeEventType.PROCESS_STATUS_CHANGED,
+        timestamp=1.0,
+    )
+    custom = RuntimeEvent(
+        event_id=2,
+        runtime_id="runtime1",
+        event_type="annotation.candidate.scored",
+        timestamp=2.0,
+    )
+
+    assert standard.event_type == RuntimeEventType.PROCESS_STATUS_CHANGED
+    assert custom.event_type == "annotation.candidate.scored"
 
 
 def test_runtime_process_spec_payload_is_json_safe():

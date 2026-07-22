@@ -8,7 +8,7 @@ from typing import Any
 from .adapters import manager_record_to_runtime_event, txn_event_payload_to_runtime_event
 from .event_store import RuntimeEventJsonlStore
 from .projection import RuntimeFrameworkReducer, RuntimeProjection, RuntimeProjectionPolicy
-from .schema import RuntimeEvent
+from .schema import RuntimeEvent, RuntimeEventType
 from .store import RuntimeStore
 
 
@@ -92,5 +92,10 @@ def _affects_projection(event: RuntimeEvent) -> bool:
         or event.status_class is not None
         or event.progress is not None
         or event.error is not None
-        or event.event_type in {"artifact.produced", "artifact.updated", "artifact.removed"}
+        or event.event_type
+        in {
+            RuntimeEventType.ARTIFACT_PRODUCED,
+            RuntimeEventType.ARTIFACT_UPDATED,
+            RuntimeEventType.ARTIFACT_REMOVED,
+        }
     )

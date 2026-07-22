@@ -8,7 +8,14 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from .process import RuntimeProcessState
-from .schema import RuntimeErrorInfo, RuntimeEvent, RuntimeEventStatus, RuntimeProgress, RuntimeStatusClass
+from .schema import (
+    RuntimeErrorInfo,
+    RuntimeEvent,
+    RuntimeEventStatus,
+    RuntimeEventType,
+    RuntimeProgress,
+    RuntimeStatusClass,
+)
 
 
 class RuntimeProjection(BaseModel):
@@ -111,7 +118,7 @@ def _apply_process_event(projection: RuntimeProjection, event: RuntimeEvent) -> 
     if event.error is not None:
         update["error"] = event.error
     if (
-        event.event_type in {"process.started", "process.status.changed"}
+        event.event_type in {RuntimeEventType.PROCESS_STARTED, RuntimeEventType.PROCESS_STATUS_CHANGED}
         and event.status_class == RuntimeStatusClass.ACTIVE
     ):
         update["started_at"] = state.started_at or event.timestamp
@@ -140,7 +147,11 @@ def _apply_runtime_event(projection: RuntimeProjection, event: RuntimeEvent) -> 
 def _apply_indexes(projection: RuntimeProjection, event: RuntimeEvent) -> None:
     if event.error is not None:
         projection.error_summary.append(event.error)
-    if event.event_type in {"artifact.produced", "artifact.updated", "artifact.removed"}:
+    if event.event_type in {
+        RuntimeEventType.ARTIFACT_PRODUCED,
+        RuntimeEventType.ARTIFACT_UPDATED,
+        RuntimeEventType.ARTIFACT_REMOVED,
+    }:
         artifact = dict(event.payload)
         artifact.setdefault("event_type", event.event_type)
         artifact.setdefault("process_id", event.process_id)

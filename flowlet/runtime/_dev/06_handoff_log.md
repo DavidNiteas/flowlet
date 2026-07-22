@@ -476,6 +476,20 @@ Validation:
 
 - MetaMSTools and MassLib4Search HTTP client tests: 10 passed.
 
+### Continued Progress: Standard Event Type Vocabulary
+
+- `RuntimeEventType` now defines the recommended Flowlet vocabulary for
+  runtime, process, unit, FSM, artifact, log, metric, signal, stream, and
+  error events.
+- `RuntimeEvent.event_type` remains an open string. The enum prevents drift in
+  framework code without blocking package-owned domain events.
+- Projection and sidecar artifact handling use the standard constants, making
+  the vocabulary a real framework dependency rather than documentation only.
+
+Validation:
+
+- `flowlet/tests/test_runtime.py`: 36 passed.
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

@@ -52,6 +52,11 @@ SSE `data` payload, using its event id and event type as frame metadata.
 
 Flowlet should provide a recommended event type vocabulary, but allow extension strings.
 
+`RuntimeEventType` implements this vocabulary as a `StrEnum`. It is a source
+of constants for framework code and consumers, not a closed validation enum:
+the envelope continues to accept business event types such as
+`annotation.candidate.scored`.
+
 Recommended framework event types:
 
 ```text
