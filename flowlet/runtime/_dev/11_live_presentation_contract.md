@@ -50,6 +50,18 @@ Flowlet owns the JSON-safe framework shape as `RuntimeObservation` and
 their known job record and translate an unavailable observation into their HTTP
 status; they do not duplicate projection/manifest loading logic.
 
+The observation endpoint has an explicit three-state transport contract:
+
+| Condition | Response |
+| --- | --- |
+| Unknown business job id | `404 Not Found` |
+| Known job without standard projection or process declaration | `409 Conflict` |
+| Known job with either standard artifact | `200 OK` with `RuntimeObservation` |
+
+`409` means a client must not treat the empty result as a completed or idle
+framework runtime. This is required for memory-only and historical jobs that
+retain a business record but have not produced standard observation artifacts.
+
 ## Current Baseline
 
 | Surface | MetaMSTools | MassLib4Search | Standard-event state |

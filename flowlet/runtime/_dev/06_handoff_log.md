@@ -55,6 +55,15 @@ declaration at id `0` is excluded, later standard events are replayed, and the
 terminal success event is still delivered. This is the reconnect baseline for
 the additive standard SSE endpoints.
 
+### Runtime Observation Availability Coverage
+
+Both backend suites now verify the standard observation endpoint returns
+`409 Conflict` for a known memory-only job that has no projection or process
+declaration. Alongside the existing successful observation checks and backend
+`404` handling, this fixes the public transport distinction between unknown
+jobs, known jobs without standard artifacts, and observable runtimes. Clients
+must not interpret `409` as an empty terminal runtime.
+
 ### MetaMSTools Fresh Regression
 
 Completed a fresh isolated three-file liver analysis using the synchronous
