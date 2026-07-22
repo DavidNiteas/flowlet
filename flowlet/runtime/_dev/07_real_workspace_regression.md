@@ -72,16 +72,21 @@ Acceptance:
 
 ## Current Observation
 
-The current checked workspace state validates legacy compatibility:
+Fresh workflows were executed against the target workspace after standard
+sidecar and projection persistence were added:
 
 ```text
-.metams/runtime: 292 legacy events, no sidecar events.
-.annotation/spec_spec_unispec_pos/runtime: 185 legacy events, no sidecar events.
+.metams/runtime: 386 legacy events, 94 sidecar events, succeeded projection.
+.annotation/spec_spec_unispec_pos/runtime: 370 legacy events, 185 sidecar events, succeeded projection.
 ```
 
-This means the existing historical runtime files are compatible with the
-standard adapter, while a fresh run is still required to prove sidecar emission
-on the real sample.
+Strict validation passes for both directories. Their projection-aware package
+readers report a completed job with 3 total, 3 completed, and 0 remaining.
+The annotation results remain under the study root at:
+
+```text
+annotations/spec_spec_unispec_pos/search_annotation_results_lib
+```
 
 ## Reader Compatibility Check
 

@@ -388,6 +388,16 @@ Validation:
 
 - MetaMSTools and MassLib4Search CLI tests: 41 passed.
 
+### Continued Progress: Terminal Projection Aggregate Repair
+
+- A real MetaMSTools projection exposed an inconsistent legacy snapshot summary:
+  the projected job was completed while its aggregate monitor still said 0/3.
+- Both business adapters now normalize terminal aggregate counters from their
+  existing `JobRecord.planned_run_count`, while retaining snapshot run, stage,
+  FSM, and runtime-task details.
+- The real `.metams/runtime` reader now reports completed 3/3 with projection
+  enabled.
+
 ### Continued Progress: Sidecar Projection Persistence
 
 - `RuntimeEventSidecarWriter` now rebuilds and writes
@@ -403,6 +413,20 @@ Validation:
 
 - Flowlet runtime plus MetaMSTools and MassLib4Search backend tests:
   67 passed.
+
+### Real Workspace End-to-End Regression
+
+Fresh runs were completed in the target liver workspace using the persisted
+MetaMSTools config and the MassLib4Search annotation config.
+
+- MetaMSTools: 386 legacy events, 94 standard sidecar events, succeeded
+  projection, and projection-aware monitor completed 3/3.
+- MassLib4Search: 370 legacy events, 185 standard sidecar events, succeeded
+  projection, and projection-aware monitor completed 3/3.
+- Annotation results exist under
+  `annotations/spec_spec_unispec_pos/search_annotation_results_lib`.
+- `validate_runtime_sidecar.py --require-sidecar` passes for both target
+  runtime directories.
 
 ### Boundary Reminder
 

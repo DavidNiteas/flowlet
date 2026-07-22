@@ -329,6 +329,8 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
 - CLI JSON output still contains `runtime_info`, `monitor`, and `snapshot`.
 - A CLI with both a projection and a business record prefers the projected job
   lifecycle without inferring business task hierarchy.
+- Terminal projections normalize business aggregate counters from the existing
+  planned-run count while preserving legacy run/stage/task detail.
 
 ## Phase 9: Legacy Cleanup
 
