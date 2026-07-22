@@ -100,6 +100,17 @@ class RuntimeEventSidecarWriter:
         """Return the standard RuntimeEvent JSONL store."""
         return self._store.runtime_event_store()
 
+    def next_event_id(self) -> int:
+        """Return the next numeric id after events already persisted in this runtime."""
+        event_store = self.store()
+        event_store.load()
+        next_id = 0
+        for event in event_store.list():
+            numeric_id = _numeric_event_id(event)
+            if numeric_id is not None:
+                next_id = max(next_id, numeric_id + 1)
+        return next_id
+
     def refresh_projection(self) -> RuntimeProjection:
         """Rebuild and persist the framework projection from sidecar events."""
         event_store = self.store()
@@ -122,3 +133,10 @@ def _affects_projection(event: RuntimeEvent) -> bool:
             RuntimeEventType.ARTIFACT_REMOVED,
         }
     )
+
+
+def _numeric_event_id(event: RuntimeEvent) -> int | None:
+    try:
+        return int(event.event_id)
+    except (TypeError, ValueError):
+        return None

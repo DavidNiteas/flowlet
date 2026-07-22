@@ -24,6 +24,7 @@ class EventBuffer(Generic[EventT]):
         event_loader: Callable[[str], EventT],
         event_id_getter: Callable[[EventT], int],
         event_json_dumper: Callable[[EventT], str],
+        initial_event_id: int = 1,
     ) -> None:
         self.job_id = job_id
         self.events_path = Path(events_path) if events_path is not None else None
@@ -34,7 +35,7 @@ class EventBuffer(Generic[EventT]):
         if self.events_path is not None:
             self.events_path.parent.mkdir(parents=True, exist_ok=True)
         self._events: list[EventT] = []
-        self._next_id = 1
+        self._next_id = initial_event_id
         self._lock = threading.RLock()
         self._changed = threading.Condition(self._lock)
 

@@ -46,6 +46,7 @@ class RuntimeBackendExecutor:
             if self.runtime_dir is not None
             else None
         )
+        self.event_store.load()
         if manager_bridge is not None and manager_bridge.event_store is not self.event_store:
             raise ValueError("manager_bridge must write to the executor event_store")
         self.manager_bridge = manager_bridge
@@ -409,7 +410,7 @@ class RuntimeBackendExecutor:
 
 
 def _next_event_id(events: list[Any]) -> int:
-    next_id = 1
+    next_id = 0
     for event in events:
         numeric_id = _numeric_event_id(event)
         if numeric_id is not None:

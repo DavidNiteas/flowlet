@@ -1498,6 +1498,33 @@ def test_runtime_event_sidecar_writer_appends_process_spec_declaration(tmp_path)
     assert projection.processes["process1"].status_class == RuntimeStatusClass.NOT_STARTED
 
 
+def test_runtime_backend_executor_starts_empty_event_store_at_zero(tmp_path):
+    class ExampleProcess(RuntimeProcessBase):
+        pass
+
+    executor = RuntimeBackendExecutor(runtime_id="runtime1", runtime_dir=tmp_path / "runtime")
+
+    executor.register(ExampleProcess(RuntimeProcessSpec(process_id="process1", process_type="example")))
+
+    [event] = executor.event_store.list()
+    assert event.event_id == 0
+    assert event.event_type == "process.created"
+
+
+def test_runtime_backend_executor_continues_existing_event_cursor(tmp_path):
+    class ExampleProcess(RuntimeProcessBase):
+        pass
+
+    runtime_dir = tmp_path / "runtime"
+    first = RuntimeBackendExecutor(runtime_id="runtime1", runtime_dir=runtime_dir)
+    first.register(ExampleProcess(RuntimeProcessSpec(process_id="process1", process_type="example")))
+
+    resumed = RuntimeBackendExecutor(runtime_id="runtime1", runtime_dir=runtime_dir)
+    resumed.register(ExampleProcess(RuntimeProcessSpec(process_id="process2", process_type="example")))
+
+    assert [event.event_id for event in resumed.event_store.list()] == [0, 1]
+
+
 def test_runtime_event_sidecar_writer_mirrors_manager_record(tmp_path):
     writer = RuntimeEventSidecarWriter(tmp_path / "runtime", runtime_id="runtime1", process_id="process1")
 
@@ -1738,6 +1765,29 @@ def test_event_buffer_persists_and_restores_jsonl(tmp_path):
     assert second.event_id == 2
     assert [event.event_id for event in restored.list()] == [1, 2, 3]
     assert [event.event_type for event in restored.list(since=1)] == ["result", "job_state"]
+
+
+def test_event_buffer_can_continue_persisted_cursor_without_loading_history(tmp_path):
+    events_path = tmp_path / "events.jsonl"
+    events_path.write_text(
+        json.dumps(ExampleEvent(7, "old-job", 1.0, "job_state", {"status": "completed"}).__dict__)
+        + "\n",
+        encoding="utf-8",
+    )
+    buffer = EventBuffer(
+        "new-job",
+        events_path,
+        event_factory=_event_factory,
+        event_loader=_event_loader,
+        event_id_getter=lambda event: event.event_id,
+        event_json_dumper=lambda event: json.dumps(event.__dict__, ensure_ascii=False),
+        initial_event_id=9,
+    )
+
+    event = buffer.emit("job_state", {"status": "queued"})
+
+    assert event.event_id == 9
+    assert [item.event_id for item in buffer.list()] == [9]
 
 
 def test_runtime_snapshot_loader_uses_monitor_snapshot_then_fallbacks(tmp_path):
