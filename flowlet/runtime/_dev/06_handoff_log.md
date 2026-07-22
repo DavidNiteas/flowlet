@@ -996,3 +996,23 @@ Keep these in business packages:
   and 27 tests pass.
 - This is a root-lifecycle checkpoint, not completion of MetaMSTools migration.
   OpenMS run-level continuation still needs to join this runtime lineage.
+
+### Phase 11 Continued: MetaMSTools Run Continuation
+
+- `OpenMSRecoveryInput` now also carries package-owned continuation
+  assessments while retaining legacy decisions for compatibility.
+- `TxnBackend.continue_job_inline()` acquires a new session, reconciles stale
+  work, creates execution ordinal 2+ under the same runtime, reserves a durable
+  command, and runs the selected OpenMS run DAG through
+  `RuntimeBackendExecutor`.
+- Valid completed run shards are skipped and missing/incompatible runs receive
+  new attempts. Root and all run declarations are retained in the durable
+  process manifest.
+- The durable-first writer now implements the event-store protocol, so executor
+  events are canonical and exported to JSONL at append time rather than copied
+  out of order afterward.
+- Numeric sparse-export cursor behavior has dedicated regression coverage.
+- Flowlet Ruff and 77 tests pass. MetaMSTools backend/recovery Ruff and 28 tests
+  pass.
+- Remaining Meta work is full post-run study finalization, HTTP/CLI continuation
+  exposure, and real workspace acceptance before declaring migration complete.

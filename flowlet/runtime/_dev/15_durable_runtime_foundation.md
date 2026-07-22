@@ -229,11 +229,13 @@ session reconciliation. Flowlet runtime tests pass at 72 tests.
 4. Switch package standard readers to the durable store, retain declared
    legacy adapters, and run crash-injection plus real-workspace acceptance.
 
-MetaMSTools root migration is now underway: new persisted jobs use the durable
+MetaMSTools migration is now underway: new persisted jobs use the durable
 store as canonical source, while `events.runtime.jsonl` remains an export for
 legacy SSE readers. Root execution/attempt/session lifecycle and expired lease
-reconciliation are native. OpenMS run-level continuation is not yet attached
-to that same lineage.
+reconciliation are native. Its backend can also create a continuation execution
+under the same runtime and use package artifact assessments plus the Flowlet
+selector/executor to skip valid OpenMS runs and execute missing runs. Full
+study finalization and real-workspace acceptance remain open.
 
 ## Acceptance
 

@@ -263,8 +263,9 @@ class RuntimeBackendExecutor:
 
     def projection(self) -> RuntimeProjection:
         """Return the current framework projection."""
-        if isinstance(self.event_store, RuntimeDurableStore):
-            return self.event_store.refresh_projection(
+        durable_store = self._durable_event_store()
+        if durable_store is not None:
+            return durable_store.refresh_projection(
                 RuntimeFrameworkReducer(policy=self.projection_policy)
             )
         return RuntimeFrameworkReducer(policy=self.projection_policy).reduce(self.event_store.list())
@@ -286,17 +287,25 @@ class RuntimeBackendExecutor:
         specs = {spec.resolved_process_id(): spec for spec in self._load_process_specs()}
         specs.update({process.spec.resolved_process_id(): process.spec for process in self._processes.values()})
         values = list(specs.values())
-        if isinstance(self.event_store, RuntimeDurableStore):
-            self.event_store.write_process_specs(values)
+        durable_store = self._durable_event_store()
+        if durable_store is not None:
+            durable_store.write_process_specs(values)
         if self.runtime_dir is not None:
             RuntimeStore(self.runtime_dir).write_process_specs(values)
 
     def _load_process_specs(self) -> list[RuntimeProcessSpec]:
-        if isinstance(self.event_store, RuntimeDurableStore):
-            return self.event_store.load_process_specs()
+        durable_store = self._durable_event_store()
+        if durable_store is not None:
+            return durable_store.load_process_specs()
         if self.runtime_dir is not None:
             return RuntimeStore(self.runtime_dir).load_process_specs()
         return []
+
+    def _durable_event_store(self) -> RuntimeDurableStore | None:
+        if isinstance(self.event_store, RuntimeDurableStore):
+            return self.event_store
+        value = getattr(self.event_store, "durable_store", None)
+        return value if isinstance(value, RuntimeDurableStore) else None
 
     def _context_for(
         self,

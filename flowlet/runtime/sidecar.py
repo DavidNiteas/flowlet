@@ -55,6 +55,33 @@ class RuntimeEventSidecarWriter:
             self.refresh_projection()
         return stored
 
+    def append(self, event: RuntimeEvent) -> RuntimeEvent:
+        """Implement RuntimeEventStore while retaining compatibility export."""
+        return self.append_event(event)
+
+    def list(self, *, since: int | str | None = None) -> list[RuntimeEvent]:
+        """Read canonical events when configured, otherwise read the JSONL store."""
+        if self.durable_store is not None:
+            return self.durable_store.list(since=since)
+        event_store = self.store()
+        event_store.load()
+        return event_store.list(since=since)
+
+    def wait_for_next(
+        self, *, since: int | str | None = None, timeout: float | None = None
+    ) -> list[RuntimeEvent]:
+        """Wait against the canonical event source."""
+        if self.durable_store is not None:
+            return self.durable_store.wait_for_next(since=since, timeout=timeout)
+        event_store = self.store()
+        event_store.load()
+        return event_store.wait_for_next(since=since, timeout=timeout)
+
+    def load(self) -> None:
+        """Satisfy RuntimeEventStore; durable stores are already lazy."""
+        if self.durable_store is None:
+            self.store().load()
+
     def append_process_spec(self, spec: RuntimeProcessSpec, *, event_id: int | str) -> RuntimeEvent:
         """Append the standard declaration event for a persisted process spec."""
         event = RuntimeEvent(
@@ -137,6 +164,26 @@ class RuntimeEventSidecarWriter:
         projection = RuntimeFrameworkReducer(policy=self.projection_policy).reduce(event_store.list())
         self._store.write_projection(projection.model_dump(mode="json"))
         return projection
+
+    def export_durable_events(self, *, since: int | None = None) -> list[RuntimeEvent]:
+        """Incrementally export canonical durable events missing from compatibility JSONL."""
+        if self.durable_store is None:
+            return []
+        compatibility = self.store()
+        compatibility.load()
+        existing_sequences = {
+            event.sequence for event in compatibility.list() if event.sequence is not None
+        }
+        effective_since = since
+        if effective_since is None and existing_sequences:
+            effective_since = max(existing_sequences)
+        exported: list[RuntimeEvent] = []
+        for event in self.durable_store.list(since=effective_since):
+            if event.sequence in existing_sequences:
+                continue
+            compatibility.append(event)
+            exported.append(event)
+        return exported
 
 
 def _affects_projection(event: RuntimeEvent) -> bool:

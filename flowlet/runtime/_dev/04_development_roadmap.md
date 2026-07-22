@@ -499,7 +499,9 @@ for both business txn backends to execute on Flowlet rather than beside it.
 
 MetaMSTools root lifecycle migration is in progress. Persisted jobs now create
 durable runtime, execution, session, and attempt records; the standard JSONL is
-a compatibility export. Run-level OpenMS continuation remains open.
+a compatibility export. Run-level OpenMS continuation now preserves the
+runtime identity and creates a new execution wave; study finalization and real
+workspace acceptance remain open.
 
 ## Standard Regression Commands
 

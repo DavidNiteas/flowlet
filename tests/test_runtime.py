@@ -2424,6 +2424,15 @@ def test_runtime_event_sidecar_writer_uses_durable_store_as_canonical_source(tmp
     assert compatibility.list() == [stored]
     assert durable.load_projection() is not None
 
+    durable.transition_execution(
+        "execution1", RuntimeExecutionStatus.RUNNING, timestamp=4.0
+    )
+    assert [event.event_type for event in writer.export_durable_events()] == [
+        RuntimeEventType.EXECUTION_STARTED
+    ]
+    compatibility.load()
+    assert [event.event_id for event in compatibility.list()] == [1, 2]
+
 
 def test_txn_event_payload_adapter_round_trips_legacy_shape():
     legacy = {
