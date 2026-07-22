@@ -86,6 +86,13 @@ defines the required census, business-owned presentation adapters, API version
 policy, standard-only validation, and major-version approval gates. No legacy
 writer or reader was changed.
 
+### Phase 9 Wave 1 Repository Census
+
+Added [10_legacy_consumer_census.md](10_legacy_consumer_census.md). All direct
+in-repository legacy readers and writers now have a named package owner and
+migration target. External consumers and endpoint-version approval remain
+explicit product-owner decisions; no compatibility path was changed.
+
 ### Completed
 
 - Added initial design document set under `flowlet/flowlet/runtime/_dev`.

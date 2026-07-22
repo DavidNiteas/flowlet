@@ -95,6 +95,10 @@ Acceptance:
   empty.
 - Product owners approve the legacy endpoint version policy.
 
+Repository-owned consumers are recorded in
+`10_legacy_consumer_census.md`. The outstanding work is the external consumer
+census and product approval; it is not safe to infer either from source search.
+
 ### Wave 2: Package-Owned Standard Presentation Adapter
 
 Implement one adapter per business package that consumes `RuntimeProjection`,
