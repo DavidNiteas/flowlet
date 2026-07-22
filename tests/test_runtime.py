@@ -6,10 +6,16 @@ from typing import Any
 
 from flowlet.runtime import (
     EventBuffer,
+    RuntimeErrorInfo,
+    RuntimeEvent,
+    RuntimeEventStatus,
     RuntimeInfo,
+    RuntimeProgress,
     RuntimeSnapshotLoader,
+    RuntimeStatusClass,
     RuntimeStore,
     list_runtime_artifacts,
+    runtime_event_payload,
     runtime_info_payload,
 )
 
@@ -58,6 +64,53 @@ def test_runtime_store_writes_standard_files_and_lists_artifacts(tmp_path):
         "runtime/progress.json",
         "status.json",
     }
+
+
+def test_runtime_event_payload_is_json_safe():
+    payload = runtime_event_payload(
+        event_id=1,
+        runtime_id="runtime1",
+        process_id="process1",
+        event_type="process.progressed",
+        timestamp=123.0,
+        status=RuntimeEventStatus.RUNNING,
+        status_class=RuntimeStatusClass.ACTIVE,
+        progress=RuntimeProgress(current=1, total=4),
+        payload={"domain": {"step": "prepare"}},
+        metadata={"source": "test"},
+    )
+
+    restored = RuntimeEvent.model_validate(payload)
+
+    assert restored.schema_version == 1
+    assert restored.event_type == "process.progressed"
+    assert restored.status == RuntimeEventStatus.RUNNING
+    assert restored.status_class == RuntimeStatusClass.ACTIVE
+    assert restored.progress is not None
+    assert restored.progress.percent == 25.0
+
+
+def test_runtime_event_accepts_custom_status_and_error():
+    event = RuntimeEvent(
+        event_id="evt-1",
+        runtime_id="runtime1",
+        event_type="business.custom",
+        timestamp=123.0,
+        status="domain_waiting",
+        status_class=RuntimeStatusClass.BLOCKED,
+        error=RuntimeErrorInfo(
+            type="ExampleError",
+            message="example failure",
+            retryable=True,
+            context={"process_id": "process1"},
+        ),
+    )
+
+    payload = event.model_dump(mode="json")
+
+    assert payload["status"] == "domain_waiting"
+    assert payload["status_class"] == "blocked"
+    assert payload["error"]["retryable"] is True
 
 
 @dataclass

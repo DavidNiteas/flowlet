@@ -16,6 +16,14 @@ from .backend import (
 from .bundle import RuntimeManagerBundle
 from .events import EventBuffer, sse_encode_event
 from .info import RuntimeFileLayout, RuntimeInfo, runtime_info_payload
+from .schema import (
+    RuntimeErrorInfo,
+    RuntimeEvent,
+    RuntimeEventStatus,
+    RuntimeProgress,
+    RuntimeStatusClass,
+    runtime_event_payload,
+)
 from .snapshot import RuntimeSnapshotLoader, RuntimeSnapshotView
 from .store import RuntimeStore, write_json
 
@@ -24,17 +32,23 @@ __all__ = [
     "FlowletJobBackendBase",
     "NON_TERMINAL_JOB_STATUSES",
     "RuntimeFileLayout",
+    "RuntimeErrorInfo",
+    "RuntimeEvent",
+    "RuntimeEventStatus",
     "RuntimeInfo",
     "RuntimeManagerBundle",
+    "RuntimeProgress",
     "RuntimeSnapshotLoader",
     "RuntimeSnapshotView",
     "RuntimeStore",
+    "RuntimeStatusClass",
     "TERMINAL_JOB_STATUSES",
     "export_runtime_manager_files",
     "list_runtime_artifacts",
     "mirror_runtime_events",
     "model_dump_json_safe",
     "new_mirror_offsets",
+    "runtime_event_payload",
     "runtime_info_payload",
     "sse_encode_event",
     "stream_runtime_events",
