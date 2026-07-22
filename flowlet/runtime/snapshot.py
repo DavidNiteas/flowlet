@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from .info import RuntimeFileLayout
+from .process import RuntimeProcessSpec
 from .projection import RuntimeProjection, load_runtime_projection
 
 StatusT = TypeVar("StatusT")
@@ -24,6 +25,7 @@ class RuntimeSnapshotView(Generic[MonitorT, SnapshotT]):
     snapshot: SnapshotT | None = None
     runtime_info: dict[str, Any] | None = None
     projection: RuntimeProjection | None = None
+    process_specs: list[RuntimeProcessSpec] = field(default_factory=list)
 
 
 class RuntimeSnapshotLoader(Generic[StatusT, SnapshotT, MonitorT]):
@@ -56,12 +58,14 @@ class RuntimeSnapshotLoader(Generic[StatusT, SnapshotT, MonitorT]):
         snapshot = self.load_snapshot(root)
         runtime_info = self.load_runtime_info(root)
         projection = self.load_projection(root)
+        process_specs = self.load_process_specs(root)
         if projection is not None and self.monitor_from_projection is not None:
             return RuntimeSnapshotView(
                 monitor=self.normalize_monitor(self.monitor_from_projection(projection)),
                 snapshot=snapshot,
                 runtime_info=runtime_info,
                 projection=projection,
+                process_specs=process_specs,
             )
         monitor = self.load_monitor(root)
         if monitor is not None:
@@ -70,6 +74,7 @@ class RuntimeSnapshotLoader(Generic[StatusT, SnapshotT, MonitorT]):
                 snapshot=snapshot,
                 runtime_info=runtime_info,
                 projection=projection,
+                process_specs=process_specs,
             )
         if snapshot is not None:
             return RuntimeSnapshotView(
@@ -77,6 +82,7 @@ class RuntimeSnapshotLoader(Generic[StatusT, SnapshotT, MonitorT]):
                 snapshot=snapshot,
                 runtime_info=runtime_info,
                 projection=projection,
+                process_specs=process_specs,
             )
         status = self.load_status(root)
         if status is not None:
@@ -85,6 +91,7 @@ class RuntimeSnapshotLoader(Generic[StatusT, SnapshotT, MonitorT]):
                 snapshot=None,
                 runtime_info=runtime_info,
                 projection=projection,
+                process_specs=process_specs,
             )
         return None
 
@@ -111,6 +118,19 @@ class RuntimeSnapshotLoader(Generic[StatusT, SnapshotT, MonitorT]):
         except Exception:
             return None
         return payload if isinstance(payload, dict) else None
+
+    def load_process_specs(self, runtime_dir: str | Path) -> list[RuntimeProcessSpec]:
+        """Load an optional declaration manifest without breaking old runtimes."""
+        path = Path(runtime_dir) / self.layout.processes
+        if not path.exists():
+            return []
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, list):
+                return []
+            return [RuntimeProcessSpec.model_validate(item) for item in payload]
+        except Exception:
+            return []
 
     @staticmethod
     def _load_typed(path: Path, loader: Callable[[str], Any]) -> Any | None:

@@ -1113,6 +1113,7 @@ def test_runtime_snapshot_loader_uses_monitor_snapshot_then_fallbacks(tmp_path):
     )
     store.write_status({"job_id": "job1", "status": "completed", "total": 2})
     store.write_snapshot({"job": {"job_id": "job1", "status": "completed", "total": 2}, "items": [1, 2]})
+    store.write_process_specs([RuntimeProcessSpec(process_id="process1", process_type="example.process")])
 
     loader = RuntimeSnapshotLoader(
         status_loader=json.loads,
@@ -1128,6 +1129,7 @@ def test_runtime_snapshot_loader_uses_monitor_snapshot_then_fallbacks(tmp_path):
     assert view.snapshot is not None
     assert view.runtime_info is not None
     assert view.runtime_info["engine"] == "ExampleEngine"
+    assert [spec.resolved_process_id() for spec in view.process_specs] == ["process1"]
 
     store.write_monitor_snapshot({"source": "monitor", "total": 2})
     view = loader.load(store.runtime_dir)

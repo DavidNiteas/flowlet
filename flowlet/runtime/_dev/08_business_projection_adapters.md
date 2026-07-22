@@ -36,6 +36,13 @@ This keeps the current CLI JSON contract intact: `runtime_info`, `monitor`,
 and `snapshot` remain present. The projection can be exposed as an additional
 field only when the relevant CLI format is intentionally extended.
 
+`RuntimeSnapshotView.process_specs` provides an additional optional framework
+observation input. It is loaded from `runtime/processes.json` when present and
+is empty for historical directories. Business readers may display declared
+capabilities or resource requests, but must not treat the manifest as a
+serialized implementation, a resume checkpoint, or a source of run/stage/FSM
+identity.
+
 The same restriction applies to live UI: standard HTTP events may be consumed
 as an additional observability feed, but existing TUI/GUI monitor rendering
 continues to use business snapshots and legacy business events. A UI migration

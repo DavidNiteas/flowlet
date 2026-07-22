@@ -321,6 +321,9 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
 ### Current Implementation Notes
 
 - `RuntimeSnapshotView` carries an optional standard `RuntimeProjection`.
+- `RuntimeSnapshotView` also carries optional persisted `RuntimeProcessSpec`
+  declarations from `runtime/processes.json`; historical directories receive an
+  empty list.
 - `RuntimeSnapshotLoader` supports an optional business-owned
   `monitor_from_projection` adapter.
 - A supplied adapter makes the standard projection the monitor source;
@@ -351,6 +354,8 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
   standard SSE frames into `RuntimeEvent` values. Current TUI/GUI monitors
   deliberately remain on their business event/projection paths until they have
   a defined business adapter for standard event presentation.
+- Both business CLI wrappers preserve the optional process-spec list from the
+  Flowlet view without using it to infer run/stage/FSM grouping or resume work.
 
 ## Phase 9: Legacy Cleanup
 

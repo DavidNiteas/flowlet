@@ -251,6 +251,20 @@ Validation:
 
 - `flowlet/tests/test_runtime.py`: 37 passed.
 
+### Continued Progress: Process Manifest Snapshot Loading
+
+- `RuntimeSnapshotLoader` now exposes optional `process_specs` from
+  `runtime/processes.json`; a missing or unreadable manifest yields an empty
+  list, preserving historical runtime compatibility.
+- MetaMSTools and MassLib4Search CLI wrapper views forward this field without
+  changing monitor calculations or deriving business hierarchy from it.
+- The manifest remains a declaration-only artifact, not an execution resume
+  mechanism.
+
+Validation:
+
+- Flowlet runtime plus both business CLI suites: 78 passed.
+
 ### Continued Progress: Process Specification Manifest
 
 - `RuntimeFileLayout.processes` defines `runtime/processes.json`.
