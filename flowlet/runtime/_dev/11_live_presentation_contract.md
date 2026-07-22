@@ -113,6 +113,10 @@ RuntimeEvent SSE frames, including string or numeric `since` cursors. Backend
 transport failures after a stream has started close the standard stream rather
 than fabricating a non-standard runtime event.
 
+Both business backend routes return `409 Conflict` for a known job whose
+standard sidecar is unavailable. The Meta GUI proxy preflights its artifact
+listing and returns the same `409` before SSE headers are sent.
+
 The existing browser WebSocket remains a business snapshot stream. A future
 standard WebSocket, if needed, must use a new route and transmit the complete
 `RuntimeEvent` JSON envelope, not the current `_make_event` shape.

@@ -117,6 +117,15 @@ supports string cursors, and closes on a post-start backend transport failure
 instead of emitting a fabricated business event. GUI/client regression tests
 passed (30 tests); legacy GUI SSE and WebSocket contracts were not changed.
 
+### Standard Stream Availability
+
+Both package backend `/runtime-events` endpoints now return `409 Conflict` for
+a known job without `runtime/events.runtime.jsonl`, preventing an hour-long
+empty poll for a historical or incomplete runtime. MetaMSTools GUI preflights
+the artifact listing and returns the same error before opening its SSE proxy.
+The legacy `/events` endpoints and historical snapshot readers remain
+unchanged.
+
 ### Completed
 
 - Added initial design document set under `flowlet/flowlet/runtime/_dev`.
