@@ -503,6 +503,28 @@ Validation:
 
 - `flowlet/tests/test_runtime.py`: 36 passed.
 
+### Continued Progress: Resource Observation Contract
+
+- `RuntimeResourceUsage` distinguishes sampled process usage from static
+  `RuntimeResourceRequest` intent.
+- Process code can call `emit_resource_usage()` or expose `resources()` for
+  executor sampling. The resulting `resource.sampled` event updates the latest
+  per-process framework projection value.
+- No scheduling, allocation, queue, node-selection, or business resource
+  policy was added to Flowlet.
+
+Validation:
+
+- `flowlet/tests/test_runtime.py`: 37 passed.
+
+### Current Real Workspace Revalidation
+
+- The strict sidecar validator passes against the user-specified liver
+  workspace: MetaMSTools has 386 legacy / 94 standard events and MassLib4Search
+  has 370 legacy / 185 standard events.
+- Both projection-aware runtime-snapshot CLIs succeed and report 3 completed
+  units with no remaining work.
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

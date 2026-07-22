@@ -107,5 +107,19 @@ Current result:
 - Both commands succeed and retain `runtime_info`, `monitor`, and `snapshot`.
 - The MetaMSTools monitor reports 3 completed runs.
 - The MassLib4Search monitor reports 3 completed runs.
-- Neither historical directory has `runtime/projection.json`, so these checks
-  prove legacy fallback rather than projection-first behavior.
+- Both runtime directories contain `runtime/projection.json`; the CLI readers
+  therefore exercise their projection-aware business adapters while retaining
+  the legacy monitor and snapshot detail.
+
+## Current Revalidation
+
+The strict validator and both CLI commands were rerun after the standard
+event-stream, client, vocabulary, and resource-observation additions.
+
+- Strict validation still reports 386 legacy / 94 standard events for
+  `.metams/runtime`, and 370 legacy / 185 standard events for the annotation
+  runtime.
+- Both projection-aware CLI commands succeed with completed monitors showing
+  3 total, 3 completed, and 0 remaining.
+- This is a read-only regression of the persisted real sample; it does not
+  rewrite its study output or runtime files.
