@@ -400,6 +400,8 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
 
 ## Phase 9: Legacy Cleanup
 
+Status: planned. See [09_legacy_migration_plan.md](09_legacy_migration_plan.md).
+
 ### Goal
 
 Deprecate legacy event paths only after compatibility is proven.
@@ -415,6 +417,10 @@ Deprecate legacy event paths only after compatibility is proven.
 - Public migration notes exist.
 - No real sample regression.
 - Downstream business packages no longer duplicate framework event store logic.
+
+The prerequisite migration waves, consumer census, API version policy, and
+standard-only reader coverage are documented in the Phase 9 plan. Do not start
+writer removal before those gates are satisfied.
 
 ## Standard Regression Commands
 

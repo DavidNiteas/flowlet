@@ -78,6 +78,14 @@ annotation workflow suite also passed. Phase 9 remains intentionally not
 started: legacy streams remain required compatibility data until a separately
 approved removal plan exists.
 
+### Phase 9 Planning
+
+Added [09_legacy_migration_plan.md](09_legacy_migration_plan.md). It freezes
+the current dual-write state, inventories duplicated compatibility layers, and
+defines the required census, business-owned presentation adapters, API version
+policy, standard-only validation, and major-version approval gates. No legacy
+writer or reader was changed.
+
 ### Completed
 
 - Added initial design document set under `flowlet/flowlet/runtime/_dev`.

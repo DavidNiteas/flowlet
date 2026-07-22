@@ -14,6 +14,7 @@ The goal is to make Flowlet a business-neutral runtime framework for observable 
 - [06_handoff_log.md](06_handoff_log.md): Implementation handoff log.
 - [07_real_workspace_regression.md](07_real_workspace_regression.md): Real liver workspace regression procedure.
 - [08_business_projection_adapters.md](08_business_projection_adapters.md): Package-owned projection adapter contract for CLI/TUI readers.
+- [09_legacy_migration_plan.md](09_legacy_migration_plan.md): Gated plan for retiring duplicated legacy event writes without losing historical compatibility.
 
 ## Design Position
 
