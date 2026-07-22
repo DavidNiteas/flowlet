@@ -1094,5 +1094,12 @@ Keep these in business packages:
 - MetaMSTools backend/recovery Ruff and 29 tests pass. The focused real OpenMS
   regression proves initial run/study attempt 1 and study-only continuation
   attempt 2 under the same runtime lineage.
+- Thread submission and Ray node admission now close attempts started before
+  dispatch fails. Fault injection covers both windows, so neither path leaves
+  an active run attempt in the durable ledger.
+- A continuation planning fault regression verifies that the root attempt,
+  execution, and command all become failed and that the backend session lease
+  is released. Ruff passes for all MetaMSTools txn code and tests; the complete
+  `tests/txn` suite passes at 86 tests.
 - Remaining work is HTTP/CLI continuation and rerun exposure, broader crash
   injection, and final liver workspace acceptance.

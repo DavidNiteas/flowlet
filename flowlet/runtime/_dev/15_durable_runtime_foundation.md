@@ -240,8 +240,12 @@ reconciliation are native. Its backend can also create a continuation execution
 under the same runtime and use package artifact assessments plus the Flowlet
 selector/executor to skip valid OpenMS runs and execute missing runs. Initial
 streaming run/study work now has native attempts, and continuation rebuilds an
-invalid study output after reusable run nodes are skipped. Public continuation
-entrypoints and real-workspace acceptance remain open.
+invalid study output after reusable run nodes are skipped. Driver-side thread
+submission and Ray node-start failures also close every attempt that was
+started before dispatch failed. A planning fault regression proves the root
+attempt, execution, and command all become failed before the backend lease is
+released. The complete MetaMSTools txn suite passes at 86 tests. Public
+continuation entrypoints and real-workspace acceptance remain open.
 
 MassLib4Search annotation execution now declares its stable run/study DAG in
 Flowlet and reports package-owned serial, thread, and Ray execution through
