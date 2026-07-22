@@ -976,3 +976,23 @@ Keep these in business packages:
 - Flowlet Ruff and all 76 runtime tests pass.
 - Next work is to make execution waves own plan transitions, then migrate
   MetaMSTools first and MassLib4Search second.
+
+### Phase 11 Continued: MetaMSTools Durable Root Lifecycle
+
+- `RuntimeEventSidecarWriter` can now use `RuntimeDurableStore` as canonical
+  source and export the exact stored events, including canonical sequence, to
+  the legacy standard JSONL.
+- Numeric string cursors now retain numeric ordering when an export omits an
+  earlier canonical event. This prevents SSE `since=0` from waiting forever on
+  sparse compatibility exports.
+- New persisted MetaMSTools jobs create a runtime identity, backend session,
+  initial execution, root attempt, and terminal execution transition in
+  Flowlet. Process specs are persisted in both canonical and compatibility
+  views.
+- Restore no longer changes a live leased job to failed. Expired ownership is
+  reconciled to `interrupted` with `BackendSessionLost`; legacy runtimes without
+  a durable DB retain the old compatibility fallback.
+- Flowlet Ruff and 77 tests pass. MetaMSTools backend plus recovery adapter Ruff
+  and 27 tests pass.
+- This is a root-lifecycle checkpoint, not completion of MetaMSTools migration.
+  OpenMS run-level continuation still needs to join this runtime lineage.

@@ -73,7 +73,11 @@ class RuntimeEventJsonlStore:
                 for index in range(len(self._events) - 1, -1, -1):
                     if str(self._events[index].event_id) == since:
                         return list(self._events[index + 1 :])
-                return []
+                try:
+                    numeric_since = int(since)
+                except ValueError:
+                    return []
+                return [event for event in self._events if _numeric_event_id(event) > numeric_since]
             return [event for event in self._events if _numeric_event_id(event) > since]
 
     def wait_for_next(

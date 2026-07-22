@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .adapters import manager_record_to_runtime_event, txn_event_payload_to_runtime_event
+from .durable_store import RuntimeDurableStore
 from .event_store import RuntimeEventJsonlStore
 from .process import RuntimeProcessSpec
 from .projection import RuntimeFrameworkReducer, RuntimeProjection, RuntimeProjectionPolicy
@@ -26,6 +27,8 @@ class RuntimeEventSidecarWriter:
         enabled: bool = True,
         write_projection: bool = True,
         projection_policy: RuntimeProjectionPolicy | None = None,
+        durable_store: RuntimeDurableStore | None = None,
+        execution_id: str | None = None,
     ) -> None:
         self.runtime_dir = Path(runtime_dir)
         self.runtime_id = runtime_id
@@ -33,13 +36,21 @@ class RuntimeEventSidecarWriter:
         self.enabled = enabled
         self.write_projection = write_projection
         self.projection_policy = projection_policy or RuntimeProjectionPolicy()
+        self.durable_store = durable_store
+        self.execution_id = execution_id
         self._store = RuntimeStore(self.runtime_dir)
 
     def append_event(self, event: RuntimeEvent) -> RuntimeEvent:
         """Append one already-normalized RuntimeEvent."""
         if not self.enabled:
             return event
-        stored = self._store.append_runtime_event(event)
+        if self.durable_store is not None:
+            if event.execution_id is None and self.execution_id is not None:
+                event = event.model_copy(update={"execution_id": self.execution_id})
+            stored = self.durable_store.append(event)
+            self._store.append_runtime_event(stored)
+        else:
+            stored = self._store.append_runtime_event(event)
         if self.write_projection and _affects_projection(stored):
             self.refresh_projection()
         return stored
@@ -102,6 +113,8 @@ class RuntimeEventSidecarWriter:
 
     def next_event_id(self) -> int:
         """Return the next numeric id after events already persisted in this runtime."""
+        if self.durable_store is not None:
+            return self.durable_store.last_event_sequence() + 1
         event_store = self.store()
         event_store.load()
         next_id = 0
@@ -113,6 +126,12 @@ class RuntimeEventSidecarWriter:
 
     def refresh_projection(self) -> RuntimeProjection:
         """Rebuild and persist the framework projection from sidecar events."""
+        if self.durable_store is not None:
+            projection = self.durable_store.refresh_projection(
+                RuntimeFrameworkReducer(policy=self.projection_policy)
+            )
+            self._store.write_projection(projection.model_dump(mode="json"))
+            return projection
         event_store = self.store()
         event_store.load()
         projection = RuntimeFrameworkReducer(policy=self.projection_policy).reduce(event_store.list())

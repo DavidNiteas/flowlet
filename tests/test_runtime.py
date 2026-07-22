@@ -2115,6 +2115,7 @@ def test_runtime_event_jsonl_store_appends_loads_and_waits(tmp_path):
 
     assert stored.event_id == 1
     assert [item.event_id for item in restored.list()] == [1, 2]
+    assert [item.event_id for item in restored.list(since="0")] == [1, 2]
     assert [item.event_type for item in restored.wait_for_next(since=1, timeout=0.01)] == ["process.completed"]
 
 
@@ -2385,6 +2386,43 @@ def test_runtime_event_sidecar_writer_persists_projection_for_stateful_events(tm
     assert projection.event_count == 1
     assert projection.processes["process1"].status == RuntimeEventStatus.RUNNING
     assert event_store.list()[1].event_type == "log.emitted"
+
+
+def test_runtime_event_sidecar_writer_uses_durable_store_as_canonical_source(tmp_path):
+    runtime_dir = tmp_path / "runtime"
+    durable = RuntimeDurableStore.create(
+        runtime_dir / "runtime" / "runtime.db",
+        RuntimeIdentity(runtime_id="runtime1", created_at=1.0),
+    )
+    durable.begin_execution(
+        execution_id="execution1",
+        kind=RuntimeExecutionKind.INITIAL,
+        created_at=2.0,
+    )
+    writer = RuntimeEventSidecarWriter(
+        runtime_dir,
+        runtime_id="runtime1",
+        process_id="process1",
+        durable_store=durable,
+        execution_id="execution1",
+    )
+    stored = writer.append_legacy_event(
+        {
+            "event_id": 0,
+            "job_id": "process1",
+            "timestamp": 3.0,
+            "event_type": "job_state",
+            "payload": {"status": "running"},
+        }
+    )
+
+    compatibility = writer.store()
+    compatibility.load()
+    assert stored.event_id == 1
+    assert stored.execution_id == "execution1"
+    assert durable.list()[-1] == stored
+    assert compatibility.list() == [stored]
+    assert durable.load_projection() is not None
 
 
 def test_txn_event_payload_adapter_round_trips_legacy_shape():

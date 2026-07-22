@@ -223,10 +223,17 @@ session reconciliation. Flowlet runtime tests pass at 72 tests.
 
 1. Refactor the reference executor around execution waves and the durable
    store.
-2. Migrate MetaMSTools txn root and OpenMS run processes.
+2. Finish the started MetaMSTools migration by connecting OpenMS run-level
+   continuation to the durable root execution lineage.
 3. Migrate MassLib4Search annotation runtime, run processes, and study process.
 4. Switch package standard readers to the durable store, retain declared
    legacy adapters, and run crash-injection plus real-workspace acceptance.
+
+MetaMSTools root migration is now underway: new persisted jobs use the durable
+store as canonical source, while `events.runtime.jsonl` remains an export for
+legacy SSE readers. Root execution/attempt/session lifecycle and expired lease
+reconciliation are native. OpenMS run-level continuation is not yet attached
+to that same lineage.
 
 ## Acceptance
 

@@ -9,7 +9,7 @@ from typing import Any, Generic, TypeVar
 
 from .store import RuntimeStore
 
-TERMINAL_JOB_STATUSES = frozenset({"completed", "failed", "cancelled"})
+TERMINAL_JOB_STATUSES = frozenset({"completed", "failed", "cancelled", "interrupted"})
 NON_TERMINAL_JOB_STATUSES = frozenset({"created", "queued", "running"})
 
 JobRecordT = TypeVar("JobRecordT")

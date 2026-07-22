@@ -497,6 +497,10 @@ for both business txn backends to execute on Flowlet rather than beside it.
 - MetaMSTools and MassLib4Search txn migration.
 - Fault injection, compatibility, and real-workspace acceptance.
 
+MetaMSTools root lifecycle migration is in progress. Persisted jobs now create
+durable runtime, execution, session, and attempt records; the standard JSONL is
+a compatibility export. Run-level OpenMS continuation remains open.
+
 ## Standard Regression Commands
 
 Run through Pixi only:
