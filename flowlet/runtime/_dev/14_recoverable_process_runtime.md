@@ -119,10 +119,11 @@ new fields are optional or have backward-compatible defaults.
    `RuntimeProcessContext.commit_checkpoint()` and `invalidate_checkpoint()`
    are the only framework helpers that add/remove recoverable checkpoint
    references; the legacy `checkpoint()` helper remains telemetry-only.
-6. Completed baseline: MetaMSTools and MassLib4Search package adapters produce
+6. In progress: MetaMSTools and MassLib4Search package adapters produce
    framework specs, source projections, and decisions from existing business
-   artifacts, with package-level tests. Business hook dispatch integration is
-   the next increment.
+   artifacts. MetaMSTools dispatches missing runs through registered package
+   processes; MassLib4Search persists a plan before its existing resume
+   executor starts. Partial MassLib4Search retry evidence remains pending.
 7. Run isolated real-liver skip, failure/retry, and checkpoint-resume cases.
 
 ## Acceptance
@@ -154,6 +155,14 @@ fingerprint, requires existing result shards before `skip`, maps failed rows to
 gets a committed study checkpoint whose cursor lists validated completed run
 processes, allowing the planner to select `resume` for final study assembly.
 
-These adapters prove package-owned inspection and plan construction. They do
-not yet replace current business resume entry points or dispatch OpenMS/search
-business implementations through `RuntimeBackendExecutor`.
+MetaMSTools additionally exposes `OpenMSRunRecoveryProcess` and registration
+helpers. `RunFSMBatchWorkflow` accepts explicit original study indices, so a
+local recovery plan can skip run `[0]` and execute only run `[1]` without
+relocating its study row. This path is covered by an actual OpenMS execution
+and standard attempt projection.
+
+MassLib4Search backend resume now generates and persists the Flowlet plan in
+the target job runtime before starting its thread or inline execution. The
+existing annotation executor remains the owner of pending-run scheduling and
+final study assembly. This avoids duplicating its FSM and output transaction
+semantics inside a generic Flowlet process hook.

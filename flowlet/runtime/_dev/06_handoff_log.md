@@ -68,6 +68,20 @@ Package tests and the existing OpenMS batch/annotation workflow regressions
 passed. Actual business hook dispatch remains pending; no current resume route
 or workspace behavior changed.
 
+### Package Recovery Dispatch
+
+MetaMSTools `RunFSMBatchWorkflow` now accepts explicit original study indices.
+Its package recovery process can therefore execute one missing run through
+`RuntimeBackendExecutor` while preserving the run's study row. A two-run test
+skips an existing `[0]`, executes only `[1]`, and verifies a successful standard
+attempt projection.
+
+MassLib4Search backend `resume_job` and `run_resume_job_inline` now allocate the
+target job id, derive the package recovery input, create a Flowlet plan, and
+persist it before launching the existing annotation executor. Existing sync
+and HTTP resume regressions pass. The business executor still owns actual
+pending-run scheduling; partial failure/retry evidence is the next test gap.
+
 ### Current-Layout Regression Audit
 
 The real liver workspace was reclassified into two evidence levels:
