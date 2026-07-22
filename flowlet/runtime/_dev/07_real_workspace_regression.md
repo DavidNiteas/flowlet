@@ -233,6 +233,38 @@ Observed artifacts:
   passes, and `meta-ms-tools runtime-snapshot print --format json` reports a
   completed monitor with 3 total, 3 completed, and 0 remaining.
 
-The MassLib4Search execution evidence is pending. Do not reuse the
-`runtime_regression_current` annotation id if its target directory appears;
-choose a new unique suffix for the next run.
+### MassLib4Search, 2026-07-22
+
+The workspace-mode MassLib4Search command above was executed against the same
+real study root using the fresh `runtime_regression_current` annotation id.
+The existing `spec_spec_unispec_pos` result was not modified.
+
+```text
+runtime: .annotation/runtime_regression_current/runtime
+results: annotations/runtime_regression_current/search_annotation_results_lib
+job id:  2d450a39a8a64f42b53a25da069b0e5c
+elapsed: 17.043 seconds
+result:  completed, 3 of 3 runs completed, 0 failed
+```
+
+Observed artifacts:
+
+- The new annotation directory contains eight files (53 MB). The existing
+  `annotations/spec_spec_unispec_pos/search_annotation_results_lib` remains
+  present and unchanged.
+- `events.jsonl` contains 185 legacy events; the standard sidecar contains 186
+  events, beginning with the root `process.created` event at id `0`.
+- `runtime/processes.json` declares `annotation.search` with
+  `metadata.engine = MassLib4Search`.
+- `runtime/projection.json` reports `succeeded` with 80 projected stateful
+  events. The same append-only telemetry rule explains the lower projection
+  count.
+- `validate_runtime_sidecar.py --require-sidecar --require-current-layout`
+  passes for both fresh runtimes, and both package
+  `runtime-snapshot print --format json` commands succeed.
+
+The process emitted a Transformers warning that a `unimol` model was being
+instantiated as `clip`. It did not produce a runtime error and all annotation
+summary counts were populated, but it is a separate model-configuration item
+to investigate before treating the numerical annotation result as a model
+quality benchmark. It is not a Flowlet runtime contract failure.

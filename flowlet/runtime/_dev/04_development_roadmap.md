@@ -269,6 +269,8 @@ designed framework component rather than expanding business backends here.
 
 ## Phase 6: MetaMSTools Compatibility Adapter
 
+Status: completed.
+
 ### Goal
 
 Adapt MetaMSTools runtime backend to emit standard events without changing business output.
@@ -296,8 +298,13 @@ Adapt MetaMSTools runtime backend to emit standard events without changing busin
   `metams.openms.analysis` `RuntimeProcessSpec` in `runtime/processes.json`.
 - Run/stage hierarchy remains business-owned in `JobSnapshot` and is not
   fabricated from the root declaration.
+- A fresh three-file real liver run completed in an isolated runtime directory
+  and passed `--require-current-layout`; see
+  [07_real_workspace_regression.md](07_real_workspace_regression.md).
 
 ## Phase 7: MassLib4Search Compatibility Adapter
+
+Status: completed.
 
 ### Goal
 
@@ -326,8 +333,13 @@ Adapt MassLib4Search runtime backend to emit standard events without changing an
   the existing job type, such as `annotation.search` or `search_lib.build`.
 - Annotation studies, runs, and FSM stages remain business subjects until they
   need independently addressable process operations.
+- A fresh workspace-mode real liver annotation using a new annotation id
+  completed and passed `--require-current-layout`; see
+  [07_real_workspace_regression.md](07_real_workspace_regression.md).
 
 ## Phase 8: Reader Migration
+
+Status: completed for read-only projection and declaration inspection.
 
 ### Goal
 
@@ -382,6 +394,9 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
   a defined business adapter for standard event presentation.
 - Both business CLI wrappers preserve the optional process-spec list from the
   Flowlet view without using it to infer run/stage/FSM grouping or resume work.
+- The current real liver fresh runtimes pass both package
+  `runtime-snapshot print --format json` readers with standard declarations,
+  projections, and preserved business monitor detail.
 
 ## Phase 9: Legacy Cleanup
 

@@ -39,6 +39,45 @@ projection-aware package snapshot reader.
 MassLib4Search must still receive the same fresh-run evidence using a new
 workspace annotation id.
 
+### MassLib4Search Fresh Regression
+
+Completed the workspace-mode real liver annotation using the new
+`runtime_regression_current` id. The run completed in 17.043 seconds, retained
+the existing annotation result, and produced a 53 MB new annotation result.
+
+Its runtime is the second real persisted directory confirmed to satisfy the
+complete current writer contract. Both fresh package runtimes now pass strict
+sidecar/current-layout validation and their respective projection-aware
+snapshot CLI readers.
+
+The MassLib4Search process logged a non-fatal Transformers warning about
+instantiating a `unimol` model as `clip`. Record it as a separate model
+configuration follow-up; it does not affect runtime protocol validation.
+
+### Final Regression Verification
+
+After both real runs, the following checks passed:
+
+```bash
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/tests/test_runtime.py \
+  MetaMSTools/MetaMSTools/txn/backend MetaMSTools/MetaMSTools/cli \
+  MetaMSTools/tests/txn/backend/test_txn_backend.py MetaMSTools/tests/cli/test_cli.py \
+  MassLib4Search/python/MassLib4Search/txn/backend MassLib4Search/python/MassLib4Search/cli \
+  MassLib4Search/tests/txn/test_backend.py MassLib4Search/tests/cli/test_cli.py \
+  MassLib4Search/tests/txn/search/test_annotation_workflow.py
+pixi run -e dev-all-gpu pytest flowlet/tests/test_runtime.py \
+  MetaMSTools/tests/txn/backend/test_txn_backend.py \
+  MassLib4Search/tests/txn/test_backend.py -q
+pixi run -e dev-all-gpu pytest MetaMSTools/tests/cli/test_cli.py \
+  MassLib4Search/tests/cli/test_cli.py \
+  MassLib4Search/tests/txn/search/test_annotation_workflow.py -q
+```
+
+Ruff passed. The framework and backend suite reported 73 passed; the CLI and
+annotation workflow suite also passed. Phase 9 remains intentionally not
+started: legacy streams remain required compatibility data until a separately
+approved removal plan exists.
+
 ### Completed
 
 - Added initial design document set under `flowlet/flowlet/runtime/_dev`.
