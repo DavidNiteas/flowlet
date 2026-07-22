@@ -22,7 +22,7 @@ def main() -> int:
         action="store_true",
         help=(
             "Require artifacts produced by the current runtime integration: a "
-            "process manifest, root process.created event id 0, and a consistent projection."
+            "process manifest, root process.created event, and a consistent projection."
         ),
     )
     parser.add_argument(
@@ -114,17 +114,16 @@ def _validate_current_layout(runtime_dir: Path, events: list[RuntimeEvent]) -> d
     except (OSError, ValueError, json.JSONDecodeError):
         specs = []
     projection = store.load_projection()
-    root_event = events[0] if events else None
-    root_process_id = root_event.process_id if root_event is not None else None
     declared_root_ids = {spec.resolved_process_id() for spec in specs}
+    root_process_id = _current_root_process_id(runtime_dir, declared_root_ids)
+    root_declared = any(
+        event.event_type == "process.created"
+        and event.process_id == root_process_id
+        for event in events
+    )
     return {
         "process_manifest": bool(specs),
-        "root_process_declaration": bool(
-            root_event is not None
-            and root_event.event_id == 0
-            and root_event.event_type == "process.created"
-            and root_process_id in declared_root_ids
-        ),
+        "root_process_declaration": root_declared,
         "projection": projection is not None,
         # Log and stream events are deliberately append-only and need not
         # trigger a projection rewrite, so equality is not an invariant.
@@ -134,6 +133,24 @@ def _validate_current_layout(runtime_dir: Path, events: list[RuntimeEvent]) -> d
         and root_process_id is not None
         and root_process_id in projection.processes,
     }
+
+
+def _current_root_process_id(
+    runtime_dir: Path,
+    declared_process_ids: set[str],
+) -> str | None:
+    for filename in ("runtime_info.json", "job_spec.json"):
+        path = runtime_dir / filename
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        job_id = payload.get("job_id")
+        if isinstance(job_id, str) and job_id in declared_process_ids:
+            return job_id
+    return next(iter(declared_process_ids), None)
 
 
 if __name__ == "__main__":

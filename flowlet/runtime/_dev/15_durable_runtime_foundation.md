@@ -2,12 +2,13 @@
 
 ## Status
 
-Phase 11 in progress. Stable identity contracts, the first transactional
+Phase 11 foundation complete. Stable identity contracts, the transactional
 event/ledger store, recoverable runtime-directory reset, incremental
-projections, rebuildable ledgers, backend-session leases, and interrupted-work
+projections, rebuildable ledgers, backend-session leases, interrupted-work
 reconciliation, durable commands, and generic DAG continuation selection are
-implemented. Execution-wave orchestration and business backend migration
-remain open.
+implemented. MetaMSTools and MassLib4Search now report native run/study process
+lifecycle through this foundation. Package schedulers remain the owners of
+business execution and artifact policy by design.
 
 ## Objective
 
@@ -223,7 +224,7 @@ continue creates execution ordinal 2 under the same runtime, identity mismatch
 is rejected, and projection reads can begin after the persisted cursor. Lease
 tests prove one winner among four concurrent acquirers and deterministic stale
 session reconciliation. Concurrent external reporters also allocate distinct
-attempt ordinals. Flowlet runtime tests pass at 82 tests.
+attempt ordinals. Flowlet runtime tests pass at 83 tests.
 
 Package-level crash injection now starts a real child process attempt under
 each txn backend, lets its backend lease expire, and restores through a new
@@ -231,15 +232,18 @@ backend instance. Both packages reconcile the child attempt and execution to
 `interrupted`. Their materialized ledger, command index, and framework
 projection compare equal to full rebuilds from canonical events afterward.
 
-## Remaining Phases
+## Follow-up Phases
 
-1. Finish execution-wave orchestration and fault injection around recovery
-   dispatch.
-2. Finish MetaMSTools public continuation and rerun entrypoints.
-3. Switch package standard readers to the durable store, retain declared
-   legacy adapters, and run crash-injection plus real-workspace acceptance.
+1. Move more package scheduler boilerplate behind optional Flowlet execution-
+   wave helpers without moving business execution or artifact policy into
+   Flowlet.
+2. Switch remaining package standard readers to the durable store and retain
+   the declared JSONL/legacy adapters only as compatibility views.
+3. Add kill-at-each-boundary fault injection around command acceptance,
+   attempt dispatch, checkpoint commit, and terminal reporting.
 
-MetaMSTools migration is now underway: new persisted jobs use the durable
+MetaMSTools migration is complete at the native process-lifecycle layer: new
+persisted jobs use the durable
 store as canonical source, while `events.runtime.jsonl` remains an export for
 legacy SSE readers. Root execution/attempt/session lifecycle and expired lease
 reconciliation are native. Its backend can also create a continuation execution
@@ -256,7 +260,8 @@ HTTP/client rerun now atomically replaces the runtime lineage in place. The
 new identity increments `generation`, references the abandoned runtime, and
 preserves `logical_task_id`. MetaMSTools removes study outputs while retaining
 the `.metams` config/runtime tree before Flowlet resets the runtime directory.
-Real-workspace acceptance remains open.
+Real-workspace initial execution, rerun, continuation, strict validation, and
+event-only rebuild acceptance now pass.
 
 MassLib4Search annotation execution now declares its stable run/study DAG in
 Flowlet and reports package-owned serial, thread, and Ray execution through
@@ -265,13 +270,14 @@ the driver; they never write SQLite. Initial runs create run/study attempts,
 valid continuation nodes append skip events without new attempts, and failed
 runs continue under the same process id with the next attempt ordinal. The
 package still owns FSM work, artifact validation, aggregation, and output
-cleanup. Public rerun and final real-workspace acceptance remain open.
+cleanup. Public rerun and real-workspace initial/rerun/continue acceptance are
+complete.
 
 The package also exposes `/continue` and a matching client method while
-retaining `/resume` as a compatibility alias. Its current continuation still
-uses a derived backend job id inside the stable runtime lineage; converging
-that compatibility identity with the original backend job remains migration
-work rather than a Flowlet concern.
+retaining `/resume` as a compatibility operation. `/continue` preserves the
+original backend `job_id`, `runtime_id`, and process ids, creates the next
+execution and root attempt, and dispatches no attempt for valid skipped run or
+study nodes. Legacy `/resume` may still derive a new backend job identity.
 
 MassLib4Search annotation rerun uses the same Flowlet directory transaction,
 creates a new runtime/job identity with generation +1, and changes the package

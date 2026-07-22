@@ -1145,3 +1145,32 @@ Keep these in business packages:
   `RuntimeFrameworkReducer` projection all equal their materialized package
   runtime state after reconciliation.
 - Focused crash tests and Ruff pass in both packages.
+
+### Phase 11 Completion: Stable Continue And Liver Acceptance
+
+- MassLib4Search `/continue` now preserves the existing backend `job_id` and
+  durable `runtime_id`. It creates execution ordinal 2+ and a root resume
+  attempt linked through `resumed_from_attempt_id`; valid run/study nodes emit
+  skip observations without creating attempts. Legacy `/resume` remains a
+  separate compatibility operation that may derive a new backend job.
+- Root attempt reporting now uses `RuntimeProcessAttemptReporter` instead of
+  manually constructing `attempt:1` events. Attempt ordinal allocation and
+  terminal validation therefore use the same durable Flowlet API as child
+  processes.
+- The real liver annotation rerun has runtime id
+  `ada7bade46a248d380d138a686a1e87b`, generation 2, and an audit link to the
+  abandoned runtime. Its same-id continuation produced execution 2 and root
+  attempt 2 while all three run attempts and the study attempt remained at
+  ordinal 1.
+- The real runtime passes strict current-layout validation. Its materialized
+  ledger, command index, and incrementally refreshed projection equal complete
+  event-only rebuilds across 284 canonical events.
+- Durable lifecycle events correctly precede process declarations, so the
+  development validator now identifies the declared root from runtime metadata
+  and searches the event stream instead of requiring declaration event 0.
+- MetaMSTools streaming completion summaries now read the final persisted
+  study. This reports real run ids after streaming assembly instead of an empty
+  in-memory compatibility result.
+- Verification: Flowlet runtime `83 passed`; MetaMSTools txn/CLI `165 passed`;
+  MassLib4Search txn/CLI `74 passed` with one existing Ray FutureWarning. Ruff
+  passes for every changed Python file.

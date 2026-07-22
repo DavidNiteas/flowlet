@@ -339,3 +339,45 @@ standard-only mode, and framework `RuntimeObservation` reports `succeeded`.
 The same non-fatal `unimol`/`clip` model warning appeared during both fresh and
 resumed annotation execution. It remains a separate model-configuration issue,
 not a runtime recovery failure.
+
+## Durable Foundation Final Regression, 2026-07-23
+
+The standard study root was used directly as the workspace. MetaMSTools wrote
+framework data below `.metams`, MassLib4Search wrote annotation runtime data
+below `.annotation/runtime_foundation_final/runtime`, and annotation results
+were merged into `annotations/runtime_foundation_final`.
+
+MetaMSTools completed all three liver runs, then completed a native rerun with:
+
+```text
+runtime id: 567041ba98404355addde837c3dda4ee
+generation: 2
+run ids:    Liver-1, Liver-2, Liver-3
+```
+
+The rerun preserved the existing `spec_spec_unispec_pos` annotation aggregate
+hash and all non-Meta study artifacts. Root, three run, and study attempts
+succeeded. Strict layout validation and ledger/command/projection rebuild
+comparisons passed.
+
+MassLib4Search completed a fresh annotation and native rerun with:
+
+```text
+runtime id:       ada7bade46a248d380d138a686a1e87b
+generation:       2
+rerun of:         49eb6164f67846259004dfa57fd0049c
+annotation id:    runtime_foundation_final
+run result count: 3
+```
+
+A subsequent native `continue` retained that runtime id and appended
+`execution:2`. The root received `attempt:2` linked to `attempt:1`; processes
+`annotation.run:Liver-1`, `Liver-2`, `Liver-3`, and
+`annotation.study:runtime_foundation_final` retained only `attempt:1` because
+their outputs were valid. The runtime contains 284 canonical events and passes
+strict validation; ledger, commands, and projection all equal event-only
+rebuilds.
+
+The Transformers `unimol`/`clip` warning remains non-fatal and outside the
+runtime contract. It should be tracked as model configuration work rather than
+runtime recovery work.
