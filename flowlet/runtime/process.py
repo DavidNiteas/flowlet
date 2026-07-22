@@ -157,6 +157,7 @@ class RuntimeProcessContext:
         parent_process_id: str | None = None,
         runtime_dir: str | Path | None = None,
         metadata: dict[str, Any] | None = None,
+        event_id_start: int = 1,
     ) -> None:
         self.runtime_id = runtime_id
         self.process_id = process_id
@@ -164,7 +165,7 @@ class RuntimeProcessContext:
         self.event_store = event_store
         self.runtime_dir = Path(runtime_dir) if runtime_dir is not None else None
         self.metadata = metadata or {}
-        self._next_event_id = 1
+        self._next_event_id = event_id_start
         self._cancel_requested = False
 
     def emit(self, event: RuntimeEvent) -> RuntimeEvent:

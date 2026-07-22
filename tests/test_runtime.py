@@ -6,6 +6,7 @@ from typing import Any
 
 from flowlet.runtime import (
     EventBuffer,
+    RuntimeBackendExecutor,
     RuntimeErrorInfo,
     RuntimeEvent,
     RuntimeEventJsonlStore,
@@ -352,6 +353,83 @@ def test_runtime_framework_reducer_propagates_child_failure_by_policy(tmp_path):
     assert default_projection.terminal_failure_count == 2
     assert no_propagation.processes["parent"].status_class == RuntimeStatusClass.ACTIVE
     assert no_propagation.terminal_failure_count == 1
+
+
+def test_runtime_backend_executor_runs_processes_and_writes_projection(tmp_path):
+    class ExampleProcess(RuntimeProcessBase):
+        def start(self, context: RuntimeProcessContext) -> dict[str, Any]:
+            context.emit_progress(1, total=1)
+            return {"process_id": self.spec.resolved_process_id()}
+
+    executor = RuntimeBackendExecutor(runtime_id="runtime1", runtime_dir=tmp_path / "runtime")
+    executor.register(ExampleProcess(RuntimeProcessSpec(process_id="p1", process_type="example.process")))
+    executor.register(
+        ExampleProcess(
+            RuntimeProcessSpec(process_id="p2", process_type="example.process", parent_process_id="p1")
+        )
+    )
+
+    results = executor.run_all()
+    projection = executor.projection()
+    restored = RuntimeStore(tmp_path / "runtime").load_projection()
+    event_ids = [event.event_id for event in executor.event_store.list()]
+
+    assert results["p1"] == {"process_id": "p1"}
+    assert results["p2"] == {"process_id": "p2"}
+    assert event_ids == sorted(event_ids)
+    assert len(set(event_ids)) == len(event_ids)
+    assert projection.terminal_success_count == 2
+    assert projection.processes["p2"].parent_process_id == "p1"
+    assert restored == projection
+
+
+def test_runtime_backend_executor_reports_failure_and_cancel(tmp_path):
+    class FailingProcess(RuntimeProcessBase):
+        def start(self, context: RuntimeProcessContext) -> None:
+            del context
+            raise ValueError("bad process")
+
+    class CancelProcess(RuntimeProcessBase):
+        def cancel(self, context: RuntimeProcessContext) -> None:
+            assert context.is_cancel_requested()
+            context.emit_log("cancel hook called")
+
+    executor = RuntimeBackendExecutor(runtime_id="runtime1", runtime_dir=tmp_path / "runtime")
+    executor.register(FailingProcess(RuntimeProcessSpec(process_id="fail", process_type="example.fail")))
+    executor.register(RuntimeProcessBase(RuntimeProcessSpec(process_id="unsupported", process_type="example.base")))
+    executor.register(
+        CancelProcess(
+            RuntimeProcessSpec(
+                process_id="cancel",
+                process_type="example.cancel",
+                capabilities=RuntimeProcessCapabilities(can_cancel=True),
+            )
+        )
+    )
+
+    try:
+        executor.run_process("fail")
+    except ValueError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("failing process should raise")
+    try:
+        executor.cancel_process("unsupported")
+    except RuntimeUnsupportedOperationError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("unsupported cancel should raise")
+    executor.cancel_process("cancel")
+
+    event_types = [event.event_type for event in executor.event_store.list()]
+    projection = executor.projection()
+
+    assert "process.failed" in event_types
+    assert "process.cancel.unsupported" in event_types
+    assert event_types[-2:] == ["log.emitted", "process.status.changed"]
+    assert projection.processes["fail"].status_class == RuntimeStatusClass.TERMINAL_FAILURE
+    assert projection.processes["unsupported"].status_class == RuntimeStatusClass.TERMINAL_FAILURE
+    assert projection.processes["cancel"].status_class == RuntimeStatusClass.TERMINAL_CANCELLED
 
 
 def test_runtime_process_base_reports_unsupported_operation(tmp_path):

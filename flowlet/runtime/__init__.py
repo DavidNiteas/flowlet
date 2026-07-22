@@ -22,6 +22,7 @@ from .backend import (
 from .bundle import RuntimeManagerBundle
 from .event_store import RuntimeEventJsonlStore, RuntimeEventStore
 from .events import EventBuffer, sse_encode_event
+from .executor import RuntimeBackendExecutor
 from .info import RuntimeFileLayout, RuntimeInfo, runtime_info_payload
 from .process import (
     RuntimeProcess,
@@ -69,6 +70,7 @@ __all__ = [
     "RuntimeEventStore",
     "RuntimeEventStatus",
     "RuntimeEventSidecarWriter",
+    "RuntimeBackendExecutor",
     "RuntimeFrameworkReducer",
     "RuntimeInfo",
     "RuntimeManagerBundle",

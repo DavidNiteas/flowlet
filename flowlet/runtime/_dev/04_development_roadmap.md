@@ -209,6 +209,8 @@ Derive runtime state from standard events.
 
 ## Phase 5: Runtime Backend Executor Prototype
 
+Status: in progress.
+
 ### Goal
 
 Provide a framework runtime backend capable of executing registered processes and storing events.
@@ -230,6 +232,22 @@ Provide a framework runtime backend capable of executing registered processes an
 - Cancel request works for a process that supports cancel.
 - Unsupported cancel returns standard unsupported-operation state.
 - Runtime files are written using current layout.
+
+### Current Implementation Notes
+
+- `RuntimeBackendExecutor` is introduced as a minimal framework executor.
+- It registers `RuntimeProcess` implementations by resolved process id.
+- It runs processes through `RuntimeProcessRunner`.
+- It allocates monotonically increasing event ids across processes sharing one event store.
+- It dispatches cancel hooks and emits unsupported-operation events when cancel is not supported.
+- It writes `runtime/projection.json` through `RuntimeStore`.
+
+### Remaining Phase 5 Work
+
+- Add pause/resume/retry/cleanup dispatch.
+- Add scheduler/resource integration only after process resource semantics are stable.
+- Decide how executor state should integrate with current `RuntimeManagerBundle`.
+- Keep queueing/threading/business lifecycle policy in business packages or explicit adapters.
 
 ## Phase 6: MetaMSTools Compatibility Adapter
 

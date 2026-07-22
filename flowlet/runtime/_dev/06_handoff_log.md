@@ -298,6 +298,53 @@ All checks passed.
 24 passed.
 ```
 
+### Continued Progress: Runtime Backend Executor Prototype
+
+Started Phase 5 implementation.
+
+Added:
+
+- `flowlet.runtime.executor.RuntimeBackendExecutor`
+
+Scope:
+
+- The executor is a minimal framework prototype.
+- It runs registered `RuntimeProcess` implementations through `RuntimeProcessRunner`.
+- It persists standard events to a `RuntimeEventStore`.
+- It writes framework projection output to `runtime/projection.json`.
+- It dispatches cancel hooks and emits unsupported-operation events when cancel is not supported.
+- It does not define queueing, threading, retry policy execution, business job lifecycle, or business monitor semantics.
+
+Current tests cover:
+
+- running multiple processes through one executor
+- monotonically increasing event ids across registered processes
+- persisted framework projection
+- process failure event emission
+- supported cancel hook dispatch
+- unsupported cancel event emission
+
+Remaining Phase 5 work:
+
+- Add pause/resume/retry/cleanup dispatch.
+- Decide `RuntimeManagerBundle` integration.
+- Keep business lifecycle adapters outside Flowlet.
+
+Validation commands:
+
+```bash
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__init__.py flowlet/tests/test_runtime.py --fix
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__init__.py flowlet/tests/test_runtime.py
+pixi run -e dev-all-gpu pytest flowlet/tests/test_runtime.py -q
+```
+
+Result:
+
+```text
+All checks passed.
+26 passed.
+```
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.
