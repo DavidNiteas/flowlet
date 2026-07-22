@@ -422,6 +422,10 @@ The prerequisite migration waves, consumer census, API version policy, and
 standard-only reader coverage are documented in the Phase 9 plan. Do not start
 writer removal before those gates are satisfied.
 
+See [13_runtime_redesign_completion_audit.md](13_runtime_redesign_completion_audit.md)
+for the current requirement-to-evidence assessment and explicit non-completion
+decision.
+
 ## Standard Regression Commands
 
 Run through Pixi only:

@@ -33,6 +33,13 @@ approval gates, deprecation notice template, standard-only rollout conditions,
 and sign-off roles. This is the remaining non-code prerequisite for Phase 9
 legacy writer removal; no endpoint behavior changed.
 
+### Runtime Redesign Completion Audit
+
+Added [13_runtime_redesign_completion_audit.md](13_runtime_redesign_completion_audit.md).
+It records the current proof for framework contracts, package compatibility,
+real workspace runs, readers, and live observation, while explicitly retaining
+the Phase 9 external approval gates as non-complete work.
+
 ### MetaMSTools Fresh Regression
 
 Completed a fresh isolated three-file liver analysis using the synchronous
