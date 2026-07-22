@@ -1016,3 +1016,20 @@ Keep these in business packages:
   pass.
 - Remaining Meta work is full post-run study finalization, HTTP/CLI continuation
   exposure, and real workspace acceptance before declaring migration complete.
+
+### Phase 11 Continued: MassLib4Search Shared Root Lineage
+
+- First persisted jobs create the durable annotation/backend runtime; resume
+  jobs reopen it and create continuation execution ordinal 2+ rather than a
+  new runtime identity.
+- New `job_id` values remain root process identities inside the stable runtime.
+  Each receives its own attempt, while single-value status/job spec files are
+  explicitly current compatibility views.
+- Resume recovery plans now use the same source and target runtime ID. Backend
+  runtime and annotation business runtime remain separate paths when workspace
+  mode is not used.
+- Restore reads canonical execution state, does not overwrite a live lease,
+  and repairs stale compatibility status from a terminal durable execution.
+- The current package annotation executor still performs run/study execution;
+  persisting a Flowlet recovery plan alone is not considered native process
+  migration. That is the next MassLib4Search task.

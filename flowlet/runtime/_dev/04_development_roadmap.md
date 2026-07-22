@@ -503,6 +503,10 @@ a compatibility export. Run-level OpenMS continuation now preserves the
 runtime identity and creates a new execution wave; study finalization and real
 workspace acceptance remain open.
 
+MassLib4Search shared annotation runtimes now preserve one durable identity
+across resume jobs and record each job as a continuation execution. Native
+annotation run/study attempt integration remains in progress.
+
 ## Standard Regression Commands
 
 Run through Pixi only:

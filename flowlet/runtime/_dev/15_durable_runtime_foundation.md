@@ -237,6 +237,13 @@ under the same runtime and use package artifact assessments plus the Flowlet
 selector/executor to skip valid OpenMS runs and execute missing runs. Full
 study finalization and real-workspace acceptance remain open.
 
+MassLib4Search root migration is also underway. A shared annotation backend
+runtime now has one durable `runtime_id`; each initial/resume job becomes an
+execution wave and retains its own root process/attempt identity. Recovery
+plans now preserve source/target runtime identity. Annotation run and study
+execution are still package-owned without native Flowlet attempt dispatch, so
+that process-level migration remains open.
+
 ## Acceptance
 
 - Continue never changes `runtime_id` or completed attempt history.
