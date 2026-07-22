@@ -59,6 +59,7 @@ class RuntimeEventType(StrEnum):
     METRIC_SAMPLED = "metric.sampled"
     SIGNAL_CHANGED = "signal.changed"
     STREAM_CHUNK = "stream.chunk"
+    RESOURCE_SAMPLED = "resource.sampled"
     ERROR_RAISED = "error.raised"
 
 

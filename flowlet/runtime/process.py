@@ -10,7 +10,14 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field, field_validator
 
 from .event_store import RuntimeEventStore
-from .schema import RuntimeErrorInfo, RuntimeEvent, RuntimeEventStatus, RuntimeProgress, RuntimeStatusClass
+from .schema import (
+    RuntimeErrorInfo,
+    RuntimeEvent,
+    RuntimeEventStatus,
+    RuntimeEventType,
+    RuntimeProgress,
+    RuntimeStatusClass,
+)
 
 
 class RuntimeProcessOperation(StrEnum):
@@ -65,6 +72,20 @@ class RuntimeResourceRequest(BaseModel):
     memory_bytes: int | None = None
     gpu: float | int | None = None
     disk_bytes: int | None = None
+    labels: dict[str, str] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RuntimeResourceUsage(BaseModel):
+    """Business-neutral resource observation reported by one process."""
+
+    cpu_percent: float | None = None
+    memory_bytes: int | None = None
+    gpu_percent: float | None = None
+    gpu_memory_bytes: int | None = None
+    disk_bytes: int | None = None
+    network_sent_bytes: int | None = None
+    network_received_bytes: int | None = None
     labels: dict[str, str] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -124,6 +145,7 @@ class RuntimeProcessState(BaseModel):
     progress: RuntimeProgress | None = None
     result: dict[str, Any] | None = None
     error: RuntimeErrorInfo | None = None
+    resource_usage: RuntimeResourceUsage | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -270,6 +292,19 @@ class RuntimeProcessContext:
         metric_payload = {"name": name, "value": value, "unit": unit, **(payload or {})}
         return self._emit("metric.sampled", payload=metric_payload, metadata=metadata)
 
+    def emit_resource_usage(
+        self,
+        usage: RuntimeResourceUsage,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeEvent:
+        """Report the process's latest resource observation."""
+        return self._emit(
+            RuntimeEventType.RESOURCE_SAMPLED,
+            payload={"resource_usage": usage.model_dump(mode="json")},
+            metadata=metadata,
+        )
+
     def emit_signal(
         self,
         name: str,
@@ -398,6 +433,11 @@ class RuntimeProcess(Protocol):
             parent_process_id=self.spec.parent_process_id,
         )
 
+    def resources(self, context: RuntimeProcessContext) -> RuntimeResourceUsage:
+        """Return the current resource observation when available."""
+        del context
+        return RuntimeResourceUsage()
+
 
 class RuntimeProcessBase:
     """Base class with standard unsupported-operation hook behavior."""
@@ -439,6 +479,11 @@ class RuntimeProcessBase:
             process_type=self.spec.process_type,
             parent_process_id=self.spec.parent_process_id,
         )
+
+    def resources(self, context: RuntimeProcessContext) -> RuntimeResourceUsage:
+        """Return an empty observation when the process does not expose usage."""
+        del context
+        return RuntimeResourceUsage()
 
 
 class RuntimeProcessRunner:

@@ -224,11 +224,11 @@ Scope:
 - `RuntimeProcessRunner` wraps one process start call with standard started/completed/failed/unsupported events.
 - Context helpers now cover status, progress, artifact, error, log, metric, signal, and checkpoint events.
 
-Remaining Phase 3 work:
-
-- Decide whether resource usage belongs in Phase 3 or Phase 4 reducers.
-- Decide whether pause/resume/retry/cancel dispatch belongs in Phase 3 or Phase 5 executor prototype.
-- Add reducer/projection work in Phase 4 before migrating CLI/TUI readers.
+The Phase 3 contract is now complete. Resource usage is a process observation,
+not a scheduler concern: `RuntimeResourceUsage`, `resources()`,
+`emit_resource_usage()`, and executor sampling write `resource.sampled`; the
+framework projection retains the latest sample per process. Scheduling,
+allocation, queues, and business process mappings remain outside Flowlet.
 
 Validation commands:
 
@@ -237,6 +237,19 @@ pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__ini
 pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__init__.py flowlet/tests/test_runtime.py
 pixi run -e dev-all-gpu pytest flowlet/tests/test_runtime.py -q
 ```
+
+### Continued Progress: Resource Observation Contract
+
+- `RuntimeResourceUsage` separates current process observations from static
+  `RuntimeResourceRequest` intent.
+- Process code can push a sample through its context or expose a `resources()`
+  hook for `RuntimeBackendExecutor.sample_process_resources()`.
+- The projection stores the latest sample per process in a framework-only
+  `resource_usage_summary`; no scheduling policy was added.
+
+Validation:
+
+- `flowlet/tests/test_runtime.py`: 37 passed.
 
 Result:
 

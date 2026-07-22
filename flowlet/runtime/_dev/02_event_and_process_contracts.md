@@ -257,6 +257,21 @@ resources(context) -> RuntimeResourceUsage
 
 Unsupported operations should return a standard unsupported-operation error or status.
 
+## Resource Observation
+
+`RuntimeResourceRequest` declares the static capacity a process asks for.
+`RuntimeResourceUsage` reports one observed sample and may include CPU/GPU
+percentages, memory/disk/network byte counters, labels, and free-form metadata.
+Neither model performs allocation, quota enforcement, node selection, or
+scheduling.
+
+A process may provide `resources(context) -> RuntimeResourceUsage`. The
+executor's `sample_process_resources(process_id)` invokes that hook and writes
+a `resource.sampled` event. `RuntimeProcessContext.emit_resource_usage(...)`
+is available when a process reports its own sample. The framework projection
+keeps the latest value per process in both the process state and
+`resource_usage_summary`.
+
 ## RuntimeProcessContext
 
 The context is how a process talks to the runtime.

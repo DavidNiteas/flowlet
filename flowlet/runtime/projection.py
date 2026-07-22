@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from .process import RuntimeProcessState
+from .process import RuntimeProcessState, RuntimeResourceUsage
 from .schema import (
     RuntimeErrorInfo,
     RuntimeEvent,
@@ -33,6 +33,7 @@ class RuntimeProjection(BaseModel):
     error_summary: list[RuntimeErrorInfo] = Field(default_factory=list)
     artifact_index: list[dict[str, Any]] = Field(default_factory=list)
     progress_summary: dict[str, RuntimeProgress] = Field(default_factory=dict)
+    resource_usage_summary: dict[str, RuntimeResourceUsage] = Field(default_factory=dict)
     event_count: int = 0
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -117,6 +118,10 @@ def _apply_process_event(projection: RuntimeProjection, event: RuntimeEvent) -> 
         projection.progress_summary[event.process_id] = event.progress
     if event.error is not None:
         update["error"] = event.error
+    resource_usage = _resource_usage_from_event(event)
+    if resource_usage is not None:
+        update["resource_usage"] = resource_usage
+        projection.resource_usage_summary[event.process_id] = resource_usage
     if (
         event.event_type in {RuntimeEventType.PROCESS_STARTED, RuntimeEventType.PROCESS_STATUS_CHANGED}
         and event.status_class == RuntimeStatusClass.ACTIVE
@@ -157,6 +162,13 @@ def _apply_indexes(projection: RuntimeProjection, event: RuntimeEvent) -> None:
         artifact.setdefault("process_id", event.process_id)
         artifact.setdefault("timestamp", event.timestamp)
         projection.artifact_index.append(artifact)
+
+
+def _resource_usage_from_event(event: RuntimeEvent) -> RuntimeResourceUsage | None:
+    if event.event_type != RuntimeEventType.RESOURCE_SAMPLED:
+        return None
+    payload = event.payload.get("resource_usage")
+    return RuntimeResourceUsage.model_validate(payload) if isinstance(payload, dict) else None
 
 
 def _finalize_projection(projection: RuntimeProjection, policy: RuntimeProjectionPolicy) -> None:

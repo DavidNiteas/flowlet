@@ -28,6 +28,7 @@ from flowlet.runtime import (
     RuntimeProjectionPolicy,
     RuntimeReducer,
     RuntimeResourceRequest,
+    RuntimeResourceUsage,
     RuntimeRetryPolicy,
     RuntimeSnapshotLoader,
     RuntimeStatusClass,
@@ -197,14 +198,17 @@ def test_runtime_process_context_emits_standard_events(tmp_path):
 
     started = context.emit_status(RuntimeEventStatus.RUNNING)
     progressed = context.emit_progress(1, total=2, description="half")
+    resource_usage = context.emit_resource_usage(RuntimeResourceUsage(cpu_percent=25.0, memory_bytes=1024))
     artifact = context.emit_artifact(context.artifact_path("result.json"), payload={"kind": "result"})
     completed = context.emit_status(RuntimeEventStatus.SUCCEEDED)
 
-    assert [event.event_id for event in store.list()] == [1, 2, 3, 4]
+    assert [event.event_id for event in store.list()] == [1, 2, 3, 4, 5]
     assert started.event_type == "process.status.changed"
     assert progressed.event_type == "process.progressed"
     assert progressed.progress is not None
     assert progressed.progress.percent == 50.0
+    assert resource_usage.event_type == "resource.sampled"
+    assert resource_usage.payload["resource_usage"]["memory_bytes"] == 1024
     assert artifact.payload["kind"] == "result"
     assert completed.status_class == RuntimeStatusClass.TERMINAL_SUCCESS
     assert all(event.parent_process_id == "parent1" for event in store.list())
@@ -375,6 +379,7 @@ def test_runtime_framework_reducer_reconstructs_process_state(tmp_path):
     class ExampleProcess(RuntimeProcessBase):
         def start(self, context: RuntimeProcessContext) -> dict[str, Any]:
             context.emit_progress(1, total=2, description="half")
+            context.emit_resource_usage(RuntimeResourceUsage(cpu_percent=20.0, memory_bytes=2048))
             context.emit_artifact(context.artifact_path("result.json"), payload={"kind": "result"})
             return {"ok": True}
 
@@ -400,6 +405,8 @@ def test_runtime_framework_reducer_reconstructs_process_state(tmp_path):
     assert projection.processes["process1"].status == RuntimeEventStatus.SUCCEEDED
     assert projection.processes["process1"].result == {"ok": True}
     assert projection.progress_summary["process1"].percent == 50.0
+    assert projection.resource_usage_summary["process1"].memory_bytes == 2048
+    assert projection.processes["process1"].resource_usage is not None
     assert projection.artifact_index[0]["kind"] == "result"
 
 
@@ -585,6 +592,24 @@ def test_runtime_backend_executor_dispatches_optional_hooks(tmp_path):
         RuntimeEventStatus.SUCCEEDED,
         RuntimeEventStatus.SUCCEEDED,
     ]
+
+
+def test_runtime_backend_executor_samples_process_resources(tmp_path):
+    class ResourceProcess(RuntimeProcessBase):
+        def resources(self, context: RuntimeProcessContext) -> RuntimeResourceUsage:
+            assert context.process_id == "resources"
+            return RuntimeResourceUsage(cpu_percent=12.5, memory_bytes=4096, labels={"worker": "local"})
+
+    executor = RuntimeBackendExecutor(runtime_id="runtime1", runtime_dir=tmp_path / "runtime")
+    executor.register(ResourceProcess(RuntimeProcessSpec(process_id="resources", process_type="example.resources")))
+
+    usage = executor.sample_process_resources("resources")
+    projection = executor.projection()
+
+    assert usage.memory_bytes == 4096
+    assert executor.event_store.list()[-1].event_type == "resource.sampled"
+    assert projection.resource_usage_summary["resources"].labels == {"worker": "local"}
+    assert projection.processes["resources"].resource_usage == usage
 
 
 def test_runtime_backend_executor_writes_projection_after_hook_failure(tmp_path):

@@ -66,7 +66,7 @@ Introduce a standard event envelope without replacing existing business events.
 
 ## Phase 2: RuntimeEvent Store and Adapters
 
-Status: in progress.
+Status: completed.
 
 ### Goal
 
@@ -126,7 +126,7 @@ Make standard events storable and compatible with current `TxnEvent`.
 
 ## Phase 3: RuntimeProcess Contracts
 
-Status: in progress.
+Status: completed.
 
 ### Goal
 
@@ -151,19 +151,17 @@ Introduce process as the minimum runtime operation unit.
 
 ### Current Implementation Notes
 
-- `RuntimeProcessSpec`, `RuntimeProcessCapabilities`, `RuntimeResourceRequest`, `RuntimeRetryPolicy`, and `RuntimeProcessState` are introduced in `flowlet.runtime.process`.
+- `RuntimeProcessSpec`, `RuntimeProcessCapabilities`, `RuntimeResourceRequest`, `RuntimeResourceUsage`, `RuntimeRetryPolicy`, and `RuntimeProcessState` are introduced in `flowlet.runtime.process`.
 - `RuntimeProcessContext` can emit standard status, progress, artifact, and error events into a `RuntimeEventStore`.
-- `RuntimeProcessContext` also emits standard log, metric, signal, and checkpoint events.
+- `RuntimeProcessContext` also emits standard log, metric, signal, checkpoint, and resource-usage events.
 - `RuntimeProcess` is a protocol for concrete implementations.
 - `RuntimeProcessBase` provides default unsupported-operation hook behavior.
 - `RuntimeUnsupportedOperationError` converts to the standard `RuntimeErrorInfo` contract.
 - `RuntimeProcessRunner` wraps process execution with standard start/completed/failed/unsupported events.
-
-### Remaining Phase 3 Work
-
-- Decide whether resource usage belongs in Phase 3 or Phase 4 reducers.
-- Decide whether pause/resume/retry/cancel runner dispatch belongs in Phase 3 or Phase 5 executor prototype.
-- Keep business process mappings in MetaMSTools and MassLib4Search adapters, not in Flowlet.
+- Resource observation belongs to the Phase 3 process contract and Phase 4
+  projection: `resources()` and `emit_resource_usage()` produce
+  `resource.sampled`, while the projection records the latest sample per
+  process. It does not define resource scheduling.
 
 ## Phase 4: Runtime Projection Reducers
 
@@ -253,6 +251,9 @@ Provide a framework runtime backend capable of executing registered processes an
 - It writes `runtime/projection.json` through `RuntimeStore`.
 - `RuntimeManagerEventBridge` incrementally mirrors a `RuntimeManagerBundle` into a `RuntimeEventStore` without controlling it.
 - The executor optionally receives a bridge that writes to its own event store, synchronizes it at operation boundaries, and never closes the bridge or bundle.
+- `sample_process_resources(...)` invokes the optional process observation hook,
+  writes `resource.sampled`, and persists the resulting projection without
+  allocating or scheduling resources.
 
 ### Remaining Phase 5 Work
 

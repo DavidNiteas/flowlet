@@ -12,6 +12,7 @@ from .process import (
     RuntimeProcessContext,
     RuntimeProcessOperation,
     RuntimeProcessRunner,
+    RuntimeResourceUsage,
     RuntimeUnsupportedOperationError,
 )
 from .projection import RuntimeFrameworkReducer, RuntimeProjection, RuntimeProjectionPolicy
@@ -113,6 +114,21 @@ class RuntimeBackendExecutor:
             terminal_status=RuntimeEventStatus.SUCCEEDED,
             terminal_message="process cleaned up",
         )
+
+    def sample_process_resources(self, process_id: str) -> RuntimeResourceUsage:
+        """Collect a process resource observation and append a standard event."""
+        process = self._get_process(process_id)
+        context = self._context_for(process)
+        self.sync_manager_events()
+        try:
+            usage = process.resources(context)
+            if not isinstance(usage, RuntimeResourceUsage):
+                usage = RuntimeResourceUsage.model_validate(usage)
+            context.emit_resource_usage(usage)
+            return usage
+        finally:
+            self.sync_manager_events()
+            self.write_projection()
 
     def projection(self) -> RuntimeProjection:
         """Return the current framework projection."""
