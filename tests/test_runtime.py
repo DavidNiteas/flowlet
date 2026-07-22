@@ -4,9 +4,13 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+import pytest
 from flowlet.runtime import (
     EventBuffer,
     RuntimeBackendExecutor,
+    RuntimeCheckpointMode,
+    RuntimeCheckpointPolicy,
+    RuntimeCheckpointRef,
     RuntimeErrorInfo,
     RuntimeEvent,
     RuntimeEventJsonlStore,
@@ -14,10 +18,12 @@ from flowlet.runtime import (
     RuntimeEventStatus,
     RuntimeEventType,
     RuntimeFrameworkReducer,
+    RuntimeIdempotency,
     RuntimeInfo,
     RuntimeManagerBundle,
     RuntimeManagerEventBridge,
     RuntimeObservation,
+    RuntimeProcessAttempt,
     RuntimeProcessBase,
     RuntimeProcessCapabilities,
     RuntimeProcessContext,
@@ -27,6 +33,10 @@ from flowlet.runtime import (
     RuntimeProgress,
     RuntimeProjection,
     RuntimeProjectionPolicy,
+    RuntimeRecoveryAction,
+    RuntimeRecoveryDecision,
+    RuntimeRecoveryPlan,
+    RuntimeRecoveryStep,
     RuntimeReducer,
     RuntimeResourceRequest,
     RuntimeResourceUsage,
@@ -204,6 +214,105 @@ def test_runtime_process_spec_payload_is_json_safe():
     assert not restored.capabilities.supports(RuntimeProcessOperation.PAUSE)
     assert payload["resource_request"]["labels"] == {"queue": "local"}
     assert payload["retry_policy"]["max_attempts"] == 2
+
+
+def test_recoverable_process_contracts_are_json_safe_and_backward_compatible():
+    legacy = RuntimeProcessSpec.model_validate({"process_id": "legacy", "process_type": "example.legacy"})
+    spec = RuntimeProcessSpec(
+        process_id="score",
+        process_type="example.score",
+        depends_on=["prepare"],
+        execution_key="sample-1:score",
+        input_fingerprint="sha256:input",
+        implementation_version="2",
+        idempotency=RuntimeIdempotency.IDEMPOTENT,
+        checkpoint_policy=RuntimeCheckpointPolicy(
+            mode=RuntimeCheckpointMode.OPTIONAL,
+            format="example.v1",
+            cursor_semantics="committed index",
+        ),
+        output_contract=["scores.parquet"],
+    )
+    checkpoint = RuntimeCheckpointRef(
+        checkpoint_id="checkpoint-1",
+        process_id="score",
+        attempt_id="attempt-1",
+        created_at=2.0,
+        uri="runtime/checkpoints/checkpoint-1.json",
+        cursor={"committed_index": 4},
+        input_fingerprint=spec.input_fingerprint,
+        implementation_version=spec.implementation_version,
+    )
+    decision = RuntimeRecoveryDecision(
+        process_id="score",
+        action=RuntimeRecoveryAction.RESUME,
+        reason="validated committed cursor",
+        source_attempt_id="attempt-1",
+        checkpoint=checkpoint,
+    )
+    plan = RuntimeRecoveryPlan(
+        plan_id="plan-1",
+        source_runtime_id="runtime-old",
+        target_runtime_id="runtime-new",
+        created_at=3.0,
+        steps=[RuntimeRecoveryStep(**decision.model_dump(mode="json"), depends_on=spec.depends_on)],
+    )
+    attempt = RuntimeProcessAttempt(
+        attempt_id="attempt-2",
+        process_id="score",
+        runtime_id="runtime-new",
+        ordinal=2,
+        resumed_from_attempt_id="attempt-1",
+        checkpoint_id=checkpoint.checkpoint_id,
+    )
+    event = RuntimeEvent(
+        event_id=1,
+        runtime_id="runtime-new",
+        process_id="score",
+        attempt_id=attempt.attempt_id,
+        checkpoint_id=checkpoint.checkpoint_id,
+        event_type=RuntimeEventType.PROCESS_ATTEMPT_CREATED,
+        timestamp=4.0,
+    )
+
+    assert legacy.depends_on == []
+    assert legacy.idempotency == RuntimeIdempotency.UNKNOWN
+    assert spec.model_dump(mode="json")["checkpoint_policy"]["mode"] == "optional"
+    assert plan.steps[0].checkpoint == checkpoint
+    assert event.model_dump(mode="json")["attempt_id"] == "attempt-2"
+
+
+def test_recovery_contracts_reject_ambiguous_or_unsafe_declarations():
+    with pytest.raises(ValueError, match="depends_on entries must be unique"):
+        RuntimeProcessSpec(process_id="score", process_type="example.score", depends_on=["prepare", "prepare"])
+
+    with pytest.raises(ValueError, match="resume recovery decisions require a checkpoint"):
+        RuntimeRecoveryDecision(
+            process_id="score",
+            action=RuntimeRecoveryAction.RESUME,
+            reason="missing checkpoint",
+        )
+
+    with pytest.raises(ValueError, match="resume recovery steps require a checkpoint"):
+        RuntimeRecoveryStep(
+            process_id="score",
+            action=RuntimeRecoveryAction.RESUME,
+            reason="missing checkpoint",
+        )
+
+    duplicate_step = RuntimeRecoveryStep(
+        process_id="score",
+        action=RuntimeRecoveryAction.RESTART,
+        reason="input changed",
+    )
+    with pytest.raises(ValueError, match="process_ids must be unique"):
+        RuntimeRecoveryPlan(
+            plan_id="plan-1",
+            source_runtime_id="runtime-old",
+            target_runtime_id="runtime-new",
+            created_at=3.0,
+            steps=[duplicate_step, duplicate_step],
+        )
 
 
 def test_runtime_process_context_emits_standard_events(tmp_path):

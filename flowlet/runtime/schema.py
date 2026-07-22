@@ -44,6 +44,17 @@ class RuntimeEventType(StrEnum):
     PROCESS_RETRYING = "process.retrying"
     PROCESS_CLEANED_UP = "process.cleaned_up"
     PROCESS_CHECKPOINTED = "process.checkpointed"
+    PROCESS_ATTEMPT_CREATED = "process.attempt.created"
+    PROCESS_ATTEMPT_STARTED = "process.attempt.started"
+    PROCESS_ATTEMPT_COMPLETED = "process.attempt.completed"
+    PROCESS_ATTEMPT_FAILED = "process.attempt.failed"
+    PROCESS_ATTEMPT_CANCELLED = "process.attempt.cancelled"
+    CHECKPOINT_CREATED = "checkpoint.created"
+    CHECKPOINT_COMMITTED = "checkpoint.committed"
+    CHECKPOINT_INVALIDATED = "checkpoint.invalidated"
+    RECOVERY_PLANNED = "runtime.recovery.planned"
+    RECOVERY_STARTED = "runtime.recovery.started"
+    RECOVERY_COMPLETED = "runtime.recovery.completed"
     UNIT_STARTED = "unit.started"
     UNIT_PROGRESSED = "unit.progressed"
     UNIT_COMPLETED = "unit.completed"
@@ -117,6 +128,8 @@ class RuntimeEvent(BaseModel):
     timestamp: float
     process_id: str | None = None
     parent_process_id: str | None = None
+    attempt_id: str | None = None
+    checkpoint_id: str | None = None
     sequence: int | None = None
     subject_type: str | None = None
     subject_id: str | None = None

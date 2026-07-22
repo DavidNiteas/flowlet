@@ -106,6 +106,32 @@ class RuntimeRetryPolicy(BaseModel):
         return value
 
 
+class RuntimeIdempotency(StrEnum):
+    """Declared replay safety for one logical process."""
+
+    UNKNOWN = "unknown"
+    IDEMPOTENT = "idempotent"
+    REQUIRES_CLEANUP = "requires_cleanup"
+    NON_IDEMPOTENT = "non_idempotent"
+
+
+class RuntimeCheckpointMode(StrEnum):
+    """Declared checkpoint support for one logical process."""
+
+    NONE = "none"
+    OPTIONAL = "optional"
+    REQUIRED = "required"
+
+
+class RuntimeCheckpointPolicy(BaseModel):
+    """Business-neutral declaration of checkpoint requirements."""
+
+    mode: RuntimeCheckpointMode = RuntimeCheckpointMode.NONE
+    format: str | None = None
+    cursor_semantics: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RuntimeProcessSpec(BaseModel):
     """Business-neutral process declaration."""
 
@@ -113,6 +139,13 @@ class RuntimeProcessSpec(BaseModel):
     process_type: str
     display_name: str | None = None
     parent_process_id: str | None = None
+    depends_on: list[str] = Field(default_factory=list)
+    execution_key: str | None = None
+    input_fingerprint: str | None = None
+    implementation_version: str | None = None
+    idempotency: RuntimeIdempotency = RuntimeIdempotency.UNKNOWN
+    checkpoint_policy: RuntimeCheckpointPolicy = Field(default_factory=RuntimeCheckpointPolicy)
+    output_contract: list[str] = Field(default_factory=list)
     inputs: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     capabilities: RuntimeProcessCapabilities = Field(default_factory=RuntimeProcessCapabilities)
@@ -124,6 +157,15 @@ class RuntimeProcessSpec(BaseModel):
     def _validate_process_type(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("process_type must not be empty")
+        return value
+
+    @field_validator("depends_on")
+    @classmethod
+    def _validate_dependencies(cls, value: list[str]) -> list[str]:
+        if any(not dependency.strip() for dependency in value):
+            raise ValueError("depends_on entries must not be empty")
+        if len(value) != len(set(value)):
+            raise ValueError("depends_on entries must be unique")
         return value
 
     def resolved_process_id(self) -> str:

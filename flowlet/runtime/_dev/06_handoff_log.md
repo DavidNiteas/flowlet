@@ -4,6 +4,20 @@ This file records implementation progress for the runtime backend redesign.
 
 ## 2026-07-22
 
+### Recoverable Process Runtime Started
+
+Phase 10 is defined in `14_recoverable_process_runtime.md`. The first schema
+increment adds process dependency/execution identity declarations, idempotency
+and checkpoint policy, immutable attempt/checkpoint references, and recovery
+decision/plan contracts. `RuntimeEvent` now carries optional `attempt_id` and
+`checkpoint_id`, with additive attempt/checkpoint/recovery event vocabulary.
+
+The audit identified MetaMSTools fingerprinted streaming run shards and
+MassLib4Search resume-safety plus completed-run manifests as package-owned
+compatibility anchors. Existing telemetry checkpoints are explicitly not
+treated as recoverable state. Graph validation, projection, planning,
+persistence, and execution dispatch are the next implementation increment.
+
 ### Current-Layout Regression Audit
 
 The real liver workspace was reclassified into two evidence levels:

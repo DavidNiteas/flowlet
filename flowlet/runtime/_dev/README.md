@@ -19,6 +19,7 @@ The goal is to make Flowlet a business-neutral runtime framework for observable 
 - [11_live_presentation_contract.md](11_live_presentation_contract.md): Read-only live GUI/TUI standard-event transport and presentation contract.
 - [12_endpoint_version_policy.md](12_endpoint_version_policy.md): Approval-ready policy and consumer-census template for legacy event endpoints.
 - [13_runtime_redesign_completion_audit.md](13_runtime_redesign_completion_audit.md): Requirement-to-evidence audit and explicit remaining Phase 9 gates.
+- [14_recoverable_process_runtime.md](14_recoverable_process_runtime.md): Process dependency, attempt, checkpoint, and local recovery-plan design.
 
 ## Design Position
 

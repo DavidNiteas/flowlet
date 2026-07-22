@@ -426,6 +426,36 @@ See [13_runtime_redesign_completion_audit.md](13_runtime_redesign_completion_aud
 for the current requirement-to-evidence assessment and explicit non-completion
 decision.
 
+## Phase 10: Recoverable Process Runtime
+
+Status: in progress. See
+[14_recoverable_process_runtime.md](14_recoverable_process_runtime.md).
+
+### Goal
+
+Produce reviewable local recovery plans from process dependencies, immutable
+attempt history, package-validated checkpoints, and prior artifacts while
+keeping all business reuse and reconstruction semantics package-owned.
+
+### Work
+
+- Add process execution identity, dependency, idempotency, and checkpoint
+  declarations.
+- Add attempt, checkpoint reference, recovery decision, and recovery plan
+  contracts.
+- Add graph validation, attempt/checkpoint projection, planner, persistence,
+  and local execution dispatch.
+- Adapt MetaMSTools streaming run reuse and MassLib4Search annotation resume.
+- Validate skip, retry, resume, and downstream invalidation on the real liver
+  workspace.
+
+### Acceptance
+
+The detailed compatibility and behavioral criteria in
+`14_recoverable_process_runtime.md` pass through Pixi tests and isolated real
+workspace runs. Legacy runtime readers and business output layouts remain
+unchanged.
+
 ## Standard Regression Commands
 
 Run through Pixi only:

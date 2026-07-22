@@ -26,6 +26,9 @@ from .executor import RuntimeBackendExecutor
 from .info import RuntimeFileLayout, RuntimeInfo, runtime_info_payload
 from .manager_bridge import RuntimeManagerEventBridge
 from .process import (
+    RuntimeCheckpointMode,
+    RuntimeCheckpointPolicy,
+    RuntimeIdempotency,
     RuntimeProcess,
     RuntimeProcessBase,
     RuntimeProcessCapabilities,
@@ -47,6 +50,14 @@ from .projection import (
     RuntimeReducer,
     load_runtime_projection,
     runtime_projection_payload,
+)
+from .recovery import (
+    RuntimeCheckpointRef,
+    RuntimeProcessAttempt,
+    RuntimeRecoveryAction,
+    RuntimeRecoveryDecision,
+    RuntimeRecoveryPlan,
+    RuntimeRecoveryStep,
 )
 from .schema import (
     RuntimeErrorInfo,
@@ -74,6 +85,9 @@ __all__ = [
     "LEGACY_TXN_EVENT_TYPE_MAP",
     "NON_TERMINAL_JOB_STATUSES",
     "RuntimeFileLayout",
+    "RuntimeCheckpointMode",
+    "RuntimeCheckpointPolicy",
+    "RuntimeCheckpointRef",
     "RuntimeErrorInfo",
     "RuntimeEvent",
     "RuntimeEventCursor",
@@ -86,6 +100,7 @@ __all__ = [
     "RuntimeManagerEventBridge",
     "RuntimeFrameworkReducer",
     "RuntimeInfo",
+    "RuntimeIdempotency",
     "RuntimeManagerBundle",
     "RuntimeObservation",
     "RuntimeProcess",
@@ -96,10 +111,15 @@ __all__ = [
     "RuntimeProcessRunner",
     "RuntimeProcessSpec",
     "RuntimeProcessState",
+    "RuntimeProcessAttempt",
     "RuntimeProjection",
     "RuntimeProjectionPolicy",
     "RuntimeProgress",
     "RuntimeReducer",
+    "RuntimeRecoveryAction",
+    "RuntimeRecoveryDecision",
+    "RuntimeRecoveryPlan",
+    "RuntimeRecoveryStep",
     "RuntimeResourceRequest",
     "RuntimeResourceUsage",
     "RuntimeRetryPolicy",
