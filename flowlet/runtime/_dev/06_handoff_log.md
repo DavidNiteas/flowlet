@@ -371,6 +371,23 @@ Validation:
 - The real liver `.annotation/spec_spec_unispec_pos/runtime` CLI snapshot
   remains readable and reports 3 completed runs.
 
+### Continued Progress: Business Projection Reader Adapters
+
+- MetaMSTools and MassLib4Search CLI readers retain the Flowlet projection in
+  their private runtime view.
+- When a valid business `JobSnapshot` or `JobRecord` is also available, each
+  package applies the projection's aggregate lifecycle to that record before
+  invoking its existing monitor reducer.
+- `succeeded` maps to each package's existing `completed` status vocabulary.
+- Run/stage/FSM/runtime-task hierarchy remains sourced from the business
+  snapshot, never inferred from arbitrary framework process ids.
+- CLI regression tests cover a legacy `running` monitor overridden by a
+  standard succeeded projection.
+
+Validation:
+
+- MetaMSTools and MassLib4Search CLI tests: 41 passed.
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

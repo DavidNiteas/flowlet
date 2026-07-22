@@ -313,14 +313,18 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
   `monitor_from_projection` adapter.
 - A supplied adapter makes the standard projection the monitor source;
   unmodified readers retain monitor/snapshot/status precedence.
-- MetaMSTools and MassLib4Search CLI adapters remain the next work because
-  their monitor schemas are business-owned.
+- MetaMSTools and MassLib4Search private CLI adapters now use a projection to
+  normalize the business job lifecycle while preserving their existing run,
+  stage, and runtime-task monitor data.
+- A projection is used only with a valid business `JobSnapshot` or `JobRecord`.
 
 ### Acceptance
 
 - Old runtime directories remain readable.
 - New runtime directories can be inspected from standard events.
 - CLI JSON output still contains `runtime_info`, `monitor`, and `snapshot`.
+- A CLI with both a projection and a business record prefers the projected job
+  lifecycle without inferring business task hierarchy.
 
 ## Phase 9: Legacy Cleanup
 

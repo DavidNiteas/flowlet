@@ -76,16 +76,17 @@ Required mapping:
 
 ## Implementation Sequence
 
-1. Extend each CLI's private `_load_runtime_snapshot_view` helper so it retains
+1. Completed: each CLI's private `_load_runtime_snapshot_view` retains
    `view.projection` from Flowlet.
-2. Add a private business adapter that receives projection plus a known
-   `JobRecord`/`JobSnapshot`.
-3. Use that adapter only when both inputs are valid; otherwise keep the current
-   monitor/snapshot/status result.
-4. Add CLI tests with a temporary runtime containing both a valid legacy job
-   record and `runtime/projection.json`.
-5. Re-run the real liver snapshot commands. Historical directories currently
-   lack projections and must continue to use fallback behavior.
+2. Completed: each package has a private adapter that receives a projection
+   plus a known `JobRecord`/`JobSnapshot`.
+3. Completed: the adapter is used only when both inputs are valid; otherwise
+   the current monitor/snapshot/status result remains in place.
+4. Completed: CLI tests construct a temporary runtime with a legacy record and
+   `runtime/projection.json`, and verify projected lifecycle precedence.
+5. Ongoing regression: re-run the real liver snapshot commands. Historical
+   directories currently lack projections and must continue to use fallback
+   behavior.
 
 ## Acceptance
 
