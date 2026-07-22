@@ -268,3 +268,18 @@ instantiated as `clip`. It did not produce a runtime error and all annotation
 summary counts were populated, but it is a separate model-configuration item
 to investigate before treating the numerical annotation result as a model
 quality benchmark. It is not a Flowlet runtime contract failure.
+
+## RuntimeObservation Readback
+
+After `RuntimeObservation` and `load_runtime_observation()` were introduced,
+both fresh real runtimes were read through that framework-only loader without
+using business snapshots:
+
+| Runtime | Available | Projection | Declared root type |
+| --- | --- | --- | --- |
+| `.metams/runtime_regression_current` | yes | `succeeded` | `metams.openms.analysis` |
+| `.annotation/runtime_regression_current/runtime` | yes | `succeeded` | `annotation.search` |
+
+The strict sidecar/current-layout validator was rerun at the same time and
+passed for both directories (334/335 MetaMSTools legacy/standard events;
+185/186 MassLib4Search legacy/standard events).

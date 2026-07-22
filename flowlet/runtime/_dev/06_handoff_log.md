@@ -142,6 +142,14 @@ projection/manifest loading to this framework helper while retaining ownership
 of job identity and HTTP error policy. Framework plus both backend suites
 passed (74 tests).
 
+### RuntimeObservation Real Readback
+
+The new loader was exercised read-only against both fresh liver runtimes. It
+reported available succeeded projections and the expected root process types:
+`metams.openms.analysis` and `annotation.search`. The strict sidecar/current-
+layout validator still passes for both. See
+[07_real_workspace_regression.md](07_real_workspace_regression.md).
+
 ### Completed
 
 - Added initial design document set under `flowlet/flowlet/runtime/_dev`.
