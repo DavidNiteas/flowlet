@@ -303,6 +303,7 @@ def test_runtime_backend_executor_syncs_non_owned_manager_bridge(tmp_path):
         executor.run_process("manager-process")
 
         assert [event.event_type for event in store.list()] == [
+            "process.created",
             "process.status.changed",
             "process.status.changed",
             "process.progressed",
@@ -486,6 +487,10 @@ def test_runtime_backend_executor_runs_processes_and_writes_projection(tmp_path)
 
     assert results["p1"] == {"process_id": "p1"}
     assert results["p2"] == {"process_id": "p2"}
+    assert [event.event_type for event in executor.event_store.list()[:2]] == [
+        "process.created",
+        "process.created",
+    ]
     assert event_ids == sorted(event_ids)
     assert len(set(event_ids)) == len(event_ids)
     assert projection.terminal_success_count == 2
@@ -646,7 +651,7 @@ def test_runtime_backend_executor_writes_projection_after_hook_failure(tmp_path)
     projection = RuntimeStore(runtime_dir).load_projection()
 
     assert projection is not None
-    assert [event.event_type for event in executor.event_store.list()] == ["log.emitted"]
+    assert [event.event_type for event in executor.event_store.list()] == ["process.created", "log.emitted"]
 
 
 def test_runtime_process_base_reports_unsupported_operation(tmp_path):
@@ -856,6 +861,24 @@ def test_runtime_event_sidecar_writer_mirrors_legacy_payload(tmp_path):
     assert event.event_type == "process.progressed"
     assert event.metadata["source"] == "legacy-buffer"
     assert event.metadata["legacy_event_type"] == "progress"
+
+
+def test_runtime_event_sidecar_writer_appends_process_spec_declaration(tmp_path):
+    writer = RuntimeEventSidecarWriter(tmp_path / "runtime", runtime_id="runtime1")
+    event = writer.append_process_spec(
+        RuntimeProcessSpec(
+            process_id="process1",
+            process_type="example.process",
+            display_name="Example process",
+        ),
+        event_id=0,
+    )
+    projection = writer.refresh_projection()
+
+    assert event.event_type == "process.created"
+    assert event.status == RuntimeEventStatus.PENDING
+    assert event.payload["process_type"] == "example.process"
+    assert projection.processes["process1"].status_class == RuntimeStatusClass.NOT_STARTED
 
 
 def test_runtime_event_sidecar_writer_mirrors_manager_record(tmp_path):

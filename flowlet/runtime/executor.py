@@ -50,6 +50,12 @@ class RuntimeBackendExecutor:
         process_id = process.spec.resolved_process_id()
         self._processes[process_id] = process
         self._write_process_specs()
+        self._context_for(process).emit_process_created(
+            process.spec.process_type,
+            display_name=process.spec.display_name,
+            metadata=process.spec.metadata,
+        )
+        self.write_projection()
         return process
 
     def run_process(self, process_id: str) -> Any:

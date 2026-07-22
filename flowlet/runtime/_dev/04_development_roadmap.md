@@ -246,6 +246,8 @@ Provide a framework runtime backend capable of executing registered processes an
 - Registration persists their serializable declarations to
   `runtime/processes.json`; this manifest intentionally excludes implementation
   objects and does not imply process restartability.
+- Registration also emits `process.created` before any operation hook runs,
+  making the declared lifecycle boundary visible in the standard event stream.
 - It runs processes through `RuntimeProcessRunner`.
 - It allocates monotonically increasing event ids across processes sharing one event store.
 - It dispatches cancel hooks and emits unsupported-operation events when cancel is not supported.

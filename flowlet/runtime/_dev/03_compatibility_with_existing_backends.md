@@ -145,6 +145,8 @@ Compatibility rule:
 - Persisted MetaMSTools jobs declare one root `metams.openms.analysis` process
   in `runtime/processes.json`; this is an observation contract, not an OpenMS
   stage hierarchy replacement.
+- The matching standard sidecar starts with root `process.created` event id
+  `0`; legacy-mirrored events retain their existing ids from `1` onward.
 
 ## Process Mapping: MassLib4Search
 
@@ -177,6 +179,8 @@ Compatibility rule:
 - Persisted MassLib4Search jobs declare one root process whose type is the
   existing job type, such as `annotation.search` or `search_lib.build`; this
   does not redefine annotation subjects, FSM stages, or resume policy.
+- The matching standard sidecar starts with root `process.created` event id
+  `0`, before the preserved legacy-mirrored event sequence.
 
 ## Compatibility Phases
 

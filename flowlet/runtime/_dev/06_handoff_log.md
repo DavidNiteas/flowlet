@@ -567,6 +567,20 @@ Validation:
 - MetaMSTools and MassLib4Search backend suites: 34 passed.
 - MetaMSTools and MassLib4Search CLI suites: 41 passed.
 
+### Continued Progress: Observable Process Registration
+
+- `RuntimeBackendExecutor.register()` now emits `process.created` with the
+  declared process type and pending/not-started lifecycle state.
+- `RuntimeEventSidecarWriter.append_process_spec()` gives compatibility
+  backends the same framework event. MetaMSTools and MassLib4Search reserve id
+  `0` for their persisted root declaration, preserving legacy-mirrored ids.
+- This makes a root process observable before execution without changing the
+  legacy `TxnEvent` stream, business status vocabulary, or output layout.
+
+Validation:
+
+- Flowlet runtime plus both business backend suites: 72 passed.
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

@@ -228,6 +228,11 @@ that manifest through `RuntimeStore.load_process_specs()` without importing or
 constructing business process implementations. It is an observation and
 contract artifact, not a checkpoint for resuming arbitrary Python objects.
 
+Process declaration is also observable: executor registration emits a standard
+`process.created` event with pending/not-started status. Compatibility backends
+that persist a root spec reserve numeric event id `0` for that declaration, so
+their existing legacy-mirrored event ids can continue from `1` unchanged.
+
 ## RuntimeProcessCapabilities
 
 Capabilities describe operations the runtime may invoke.

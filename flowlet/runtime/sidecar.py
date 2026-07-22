@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
 from .adapters import manager_record_to_runtime_event, txn_event_payload_to_runtime_event
 from .event_store import RuntimeEventJsonlStore
+from .process import RuntimeProcessSpec
 from .projection import RuntimeFrameworkReducer, RuntimeProjection, RuntimeProjectionPolicy
-from .schema import RuntimeEvent, RuntimeEventType
+from .schema import RuntimeEvent, RuntimeEventStatus, RuntimeEventType, RuntimeStatusClass
 from .store import RuntimeStore
 
 
@@ -41,6 +43,27 @@ class RuntimeEventSidecarWriter:
         if self.write_projection and _affects_projection(stored):
             self.refresh_projection()
         return stored
+
+    def append_process_spec(self, spec: RuntimeProcessSpec, *, event_id: int | str) -> RuntimeEvent:
+        """Append the standard declaration event for a persisted process spec."""
+        event = RuntimeEvent(
+            event_id=event_id,
+            runtime_id=self.runtime_id or str(self.runtime_dir),
+            process_id=spec.resolved_process_id(),
+            parent_process_id=spec.parent_process_id,
+            event_type=RuntimeEventType.PROCESS_CREATED,
+            timestamp=time.time(),
+            subject_type="process",
+            subject_id=spec.resolved_process_id(),
+            status=RuntimeEventStatus.PENDING,
+            status_class=RuntimeStatusClass.NOT_STARTED,
+            payload={
+                "process_type": spec.process_type,
+                "display_name": spec.display_name,
+            },
+            metadata=spec.metadata,
+        )
+        return self.append_event(event)
 
     def append_legacy_event(self, payload: dict[str, Any], metadata: dict[str, Any] | None = None) -> RuntimeEvent:
         """Mirror a TxnEvent-like payload to the sidecar stream."""

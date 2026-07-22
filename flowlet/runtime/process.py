@@ -215,6 +215,25 @@ class RuntimeProcessContext:
             metadata=metadata,
         )
 
+    def emit_process_created(
+        self,
+        process_type: str,
+        *,
+        display_name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeEvent:
+        """Emit the declaration event for this independently addressable process."""
+        payload = {"process_type": process_type}
+        if display_name is not None:
+            payload["display_name"] = display_name
+        return self._emit(
+            RuntimeEventType.PROCESS_CREATED,
+            status=RuntimeEventStatus.PENDING,
+            status_class=RuntimeStatusClass.NOT_STARTED,
+            payload=payload,
+            metadata=metadata,
+        )
+
     def emit_progress(
         self,
         current: float | int,
