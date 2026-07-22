@@ -8,6 +8,7 @@ from flowlet.runtime import (
     EventBuffer,
     RuntimeErrorInfo,
     RuntimeEvent,
+    RuntimeEventJsonlStore,
     RuntimeEventStatus,
     RuntimeInfo,
     RuntimeProgress,
@@ -16,7 +17,9 @@ from flowlet.runtime import (
     RuntimeStore,
     list_runtime_artifacts,
     runtime_event_payload,
+    runtime_event_to_txn_event_payload,
     runtime_info_payload,
+    txn_event_payload_to_runtime_event,
 )
 
 
@@ -111,6 +114,59 @@ def test_runtime_event_accepts_custom_status_and_error():
     assert payload["status"] == "domain_waiting"
     assert payload["status_class"] == "blocked"
     assert payload["error"]["retryable"] is True
+
+
+def test_runtime_event_jsonl_store_appends_loads_and_waits(tmp_path):
+    path = tmp_path / "events.runtime.jsonl"
+    store = RuntimeEventJsonlStore(path)
+    event = RuntimeEvent(
+        event_id=1,
+        runtime_id="runtime1",
+        process_id="process1",
+        event_type="process.started",
+        timestamp=123.0,
+        status=RuntimeEventStatus.RUNNING,
+        status_class=RuntimeStatusClass.ACTIVE,
+    )
+
+    stored = store.append(event)
+    restored = RuntimeEventJsonlStore.from_file(path)
+    restored.append(
+        RuntimeEvent(
+            event_id=2,
+            runtime_id="runtime1",
+            process_id="process1",
+            event_type="process.completed",
+            timestamp=124.0,
+            status=RuntimeEventStatus.SUCCEEDED,
+            status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+        )
+    )
+
+    assert stored.event_id == 1
+    assert [item.event_id for item in restored.list()] == [1, 2]
+    assert [item.event_type for item in restored.wait_for_next(since=1, timeout=0.01)] == ["process.completed"]
+
+
+def test_txn_event_payload_adapter_round_trips_legacy_shape():
+    legacy = {
+        "event_id": 3,
+        "job_id": "job1",
+        "timestamp": 125.0,
+        "event_type": "job_state",
+        "payload": {"status": "completed", "result": {"ok": True}},
+    }
+
+    event = txn_event_payload_to_runtime_event(legacy, runtime_id="runtime1")
+    restored = runtime_event_to_txn_event_payload(event)
+
+    assert event.runtime_id == "runtime1"
+    assert event.process_id == "job1"
+    assert event.event_type == "process.status.changed"
+    assert event.status == "completed"
+    assert event.status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert event.metadata["legacy_event_type"] == "job_state"
+    assert restored == legacy
 
 
 @dataclass

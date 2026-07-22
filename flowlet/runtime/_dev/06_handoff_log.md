@@ -43,6 +43,39 @@ All checks passed.
 6 passed.
 ```
 
+### Continued Progress
+
+Phase 2 RuntimeEvent store and adapters were started.
+
+Added:
+
+- `flowlet.runtime.event_store.RuntimeEventStore`
+- `RuntimeEventJsonlStore`
+- `flowlet.runtime.adapters.LEGACY_TXN_EVENT_TYPE_MAP`
+- `txn_event_payload_to_runtime_event(...)`
+- `runtime_event_to_txn_event_payload(...)`
+
+Added tests for:
+
+- JSONL append/load/list/wait behavior.
+- TxnEvent-like dictionary to RuntimeEvent conversion.
+- RuntimeEvent back to legacy dictionary conversion.
+
+Validation commands:
+
+```bash
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__init__.py flowlet/tests/test_runtime.py --fix
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__init__.py flowlet/tests/test_runtime.py
+pixi run -e dev-all-gpu pytest flowlet/tests/test_runtime.py -q
+```
+
+Result:
+
+```text
+All checks passed.
+8 passed.
+```
+
 ### Open Work
 
 Phase 1 is not fully complete until the schema is reviewed against real MetaMSTools and MassLib4Search event payloads.
@@ -51,10 +84,11 @@ Phase 2 should start only after that review.
 
 Recommended next steps:
 
-1. Add a small compatibility fixture set from current `TxnEvent` payloads.
-2. Implement `txn_event_payload_to_runtime_event(...)` as an adapter, not a business dependency.
-3. Introduce a `RuntimeEventStore` protocol and JSONL implementation.
-4. Decide whether standard events should initially use a sidecar file such as `runtime/events.runtime.jsonl`.
+1. Add a small compatibility fixture set from current MetaMSTools and MassLib4Search `TxnEvent` payloads.
+2. Decide whether standard events should initially use a sidecar file such as `runtime/events.runtime.jsonl`.
+3. Add manager-to-`RuntimeEvent` conversion for progress, signal, log, stream, and telemetry records.
+4. Add an opt-in sidecar writer in current business backends without changing their legacy `events.jsonl`.
+5. Keep CLI/TUI readers on existing projections until event-derived projections are implemented.
 
 ### Boundary Reminder
 
@@ -67,4 +101,3 @@ Keep these in business packages:
 - Study/workspace paths as interpreted domain concepts.
 - Business monitor summaries.
 - Resume policy.
-

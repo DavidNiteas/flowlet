@@ -62,6 +62,8 @@ Introduce a standard event envelope without replacing existing business events.
 
 ## Phase 2: RuntimeEvent Store and Adapters
 
+Status: in progress.
+
 ### Goal
 
 Make standard events storable and compatible with current `TxnEvent`.
@@ -81,6 +83,16 @@ Make standard events storable and compatible with current `TxnEvent`.
 - JSONL store can append, restore, and continue event ids.
 - Existing `EventBuffer` can be backed by or adapted to `RuntimeEventStore`.
 - MetaMSTools/MassLib4Search tests still pass if compatibility adapter is enabled.
+
+### Current Implementation Notes
+
+- `RuntimeEventStore` protocol is introduced in `flowlet.runtime.event_store`.
+- `RuntimeEventJsonlStore` provides append/list/wait/load behavior with optional JSONL persistence.
+- `txn_event_payload_to_runtime_event(...)` converts current TxnEvent-like dictionaries to `RuntimeEvent` without importing business packages.
+- `runtime_event_to_txn_event_payload(...)` converts a `RuntimeEvent` back to the legacy dictionary shape for compatibility.
+- The legacy event adapter preserves `legacy_event_type` in `RuntimeEvent.metadata`.
+- Manager-to-`RuntimeEvent` conversion and business backend integration are not implemented yet.
+- The sidecar filename decision is still open. Tests currently use `events.runtime.jsonl` as a candidate name.
 
 ## Phase 3: RuntimeProcess Contracts
 
