@@ -101,6 +101,22 @@ package-owned adapter can construct terminal root lifecycle monitor aggregates
 without legacy events or snapshots. This is not a live UI migration and does
 not reconstruct business run/stage/FSM hierarchy from Flowlet data.
 
+### Live Presentation Contract
+
+Added [11_live_presentation_contract.md](11_live_presentation_contract.md).
+It distinguishes framework observation from business monitor rendering, fixes
+the complete RuntimeEvent transport requirements, and proposes an additive
+MetaMSTools GUI route as the first live migration. Legacy SSE and WebSocket
+routes remain unchanged until endpoint policy approval.
+
+### MetaMSTools GUI Standard SSE Proxy
+
+Implemented `GET /api/v1/tasks/{task_id}/runtime-events` as an additive GUI
+proxy. It relays complete standard RuntimeEvent SSE frames from the backend,
+supports string cursors, and closes on a post-start backend transport failure
+instead of emitting a fabricated business event. GUI/client regression tests
+passed (30 tests); legacy GUI SSE and WebSocket contracts were not changed.
+
 ### Completed
 
 - Added initial design document set under `flowlet/flowlet/runtime/_dev`.

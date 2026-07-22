@@ -114,6 +114,11 @@ Acceptance:
   legacy-only runtime.
 - No Flowlet code imports MetaMSTools or MassLib4Search.
 
+The live read-only transport and presentation constraints are specified in
+`11_live_presentation_contract.md`. The first implementation target is an
+additive MetaMSTools GUI standard SSE proxy, now implemented and tested;
+legacy GUI routes stay unchanged.
+
 ### Wave 3: Standard Writer as the Primary Internal Feed
 
 Route new internal observability consumers through the sidecar store or a
