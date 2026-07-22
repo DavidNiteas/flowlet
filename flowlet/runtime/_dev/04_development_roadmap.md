@@ -243,11 +243,12 @@ Provide a framework runtime backend capable of executing registered processes an
 - It dispatches pause, resume, retry, and cleanup hooks with standard unsupported-operation events.
 - A `paused` status remains in the framework `active` status class.
 - It writes `runtime/projection.json` through `RuntimeStore`.
+- `RuntimeManagerEventBridge` incrementally mirrors a `RuntimeManagerBundle` into a `RuntimeEventStore` without controlling it.
 
 ### Remaining Phase 5 Work
 
 - Add scheduler/resource integration only after process resource semantics are stable.
-- Decide how executor state should integrate with current `RuntimeManagerBundle`.
+- Decide how an executor should construct or receive a `RuntimeManagerEventBridge` without taking ownership of manager lifecycle.
 - Keep queueing/threading/business lifecycle policy in business packages or explicit adapters.
 
 ## Phase 6: MetaMSTools Compatibility Adapter

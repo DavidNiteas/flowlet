@@ -315,6 +315,7 @@ Scope:
 - It dispatches cancel hooks and emits unsupported-operation events when cancel is not supported.
 - It dispatches pause, resume, retry, and cleanup hooks with the same supported/unsupported event pattern.
 - A `paused` status projects as an active process; it is not a terminal outcome.
+- `RuntimeManagerEventBridge` treats `RuntimeManagerBundle` as a standard event source while leaving manager lifecycle outside the executor.
 - It does not define queueing, threading, retry policy execution, business job lifecycle, or business monitor semantics.
 
 Current tests cover:
@@ -327,10 +328,11 @@ Current tests cover:
 - unsupported cancel event emission
 - supported pause/resume/retry/cleanup hook dispatch
 - unsupported retry event emission
+- manager bundle bridge conversion, deduplication, and incremental append
 
 Remaining Phase 5 work:
 
-- Decide `RuntimeManagerBundle` integration.
+- Decide how an executor receives a `RuntimeManagerEventBridge` without owning the manager bundle.
 - Keep business lifecycle adapters outside Flowlet.
 
 Validation commands:
@@ -345,7 +347,7 @@ Result:
 
 ```text
 All checks passed.
-27 passed.
+28 passed.
 ```
 
 ### Boundary Reminder

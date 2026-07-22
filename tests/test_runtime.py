@@ -14,6 +14,8 @@ from flowlet.runtime import (
     RuntimeEventStatus,
     RuntimeFrameworkReducer,
     RuntimeInfo,
+    RuntimeManagerBundle,
+    RuntimeManagerEventBridge,
     RuntimeProcessBase,
     RuntimeProcessCapabilities,
     RuntimeProcessContext,
@@ -205,6 +207,46 @@ def test_runtime_process_context_emits_auxiliary_events(tmp_path):
     assert signal.payload == {"name": "ready", "value": True}
     assert signal.status_class == RuntimeStatusClass.ACTIVE
     assert checkpoint.payload == {"name": "stage-ready", "stage": "prepare"}
+
+
+def test_runtime_manager_event_bridge_mirrors_manager_changes(tmp_path):
+    runtime = RuntimeManagerBundle.create()
+    store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
+    bridge = RuntimeManagerEventBridge(
+        runtime,
+        store,
+        runtime_id="runtime1",
+        process_id="process1",
+        metadata={"source": "manager-bridge"},
+    )
+    try:
+        runtime.progress.register_task("task1", "Task", total=2)
+        runtime.progress.update_progress("task1", current=1, status="running")
+        runtime.signals.update("ready", status="running", value=True)
+        runtime.logs.info("started", task_id="task1")
+        runtime.streams.write_chunk("stdout", "hello", task_id="task1")
+        runtime.telemetry.metric("items", 1, unit="count")
+
+        events = bridge.sync()
+
+        assert [event.event_id for event in events] == [1, 2, 3, 4, 5]
+        assert [event.event_type for event in events] == [
+            "process.progressed",
+            "signal.changed",
+            "log.emitted",
+            "stream.chunk",
+            "metric.sampled",
+        ]
+        assert all(event.metadata["source"] == "manager-bridge" for event in events)
+        assert bridge.sync() == []
+
+        runtime.logs.info("finished", task_id="task1")
+        appended = bridge.sync()
+
+        assert [event.event_id for event in appended] == [6]
+        assert appended[0].message == "finished"
+    finally:
+        runtime.close()
 
 
 def test_runtime_process_runner_emits_lifecycle_events(tmp_path):

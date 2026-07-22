@@ -24,6 +24,7 @@ from .event_store import RuntimeEventJsonlStore, RuntimeEventStore
 from .events import EventBuffer, sse_encode_event
 from .executor import RuntimeBackendExecutor
 from .info import RuntimeFileLayout, RuntimeInfo, runtime_info_payload
+from .manager_bridge import RuntimeManagerEventBridge
 from .process import (
     RuntimeProcess,
     RuntimeProcessBase,
@@ -71,6 +72,7 @@ __all__ = [
     "RuntimeEventStatus",
     "RuntimeEventSidecarWriter",
     "RuntimeBackendExecutor",
+    "RuntimeManagerEventBridge",
     "RuntimeFrameworkReducer",
     "RuntimeInfo",
     "RuntimeManagerBundle",
