@@ -388,6 +388,22 @@ Validation:
 
 - MetaMSTools and MassLib4Search CLI tests: 41 passed.
 
+### Continued Progress: Sidecar Projection Persistence
+
+- `RuntimeEventSidecarWriter` now rebuilds and writes
+  `runtime/projection.json` after a stateful standard event.
+- Projection refresh applies to status, progress, errors, and artifact events;
+  logs and streams remain append-only to avoid needless full reductions.
+- Sidecar refresh reloads the persisted JSONL stream before reducing, so it
+  cannot write an empty projection from a fresh in-memory store.
+- Both business backend regression suites verify that the persisted projection
+  contains the completed job process after an inline run.
+
+Validation:
+
+- Flowlet runtime plus MetaMSTools and MassLib4Search backend tests:
+  67 passed.
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

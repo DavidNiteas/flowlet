@@ -67,6 +67,8 @@ Acceptance:
 - Every legacy event can be adapted to `RuntimeEvent`.
 - Each target runtime directory has at least one standard sidecar event.
 - Every standard sidecar event validates as `RuntimeEvent`.
+- Each target runtime directory has `runtime/projection.json`, whose completed
+  job process is visible through the package runtime-snapshot reader.
 
 ## Current Observation
 

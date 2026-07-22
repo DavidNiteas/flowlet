@@ -727,7 +727,46 @@ def test_runtime_event_sidecar_writer_mirrors_manager_record(tmp_path):
     assert event.event_type == "process.progressed"
     assert event.progress is not None
     assert event.progress.percent == 50.0
-    assert {artifact["path"] for artifact in artifacts} == {"runtime/events.runtime.jsonl"}
+    assert {artifact["path"] for artifact in artifacts} == {
+        "runtime/events.runtime.jsonl",
+        "runtime/projection.json",
+    }
+
+
+def test_runtime_event_sidecar_writer_persists_projection_for_stateful_events(tmp_path):
+    runtime_dir = tmp_path / "runtime"
+    writer = RuntimeEventSidecarWriter(runtime_dir, runtime_id="runtime1", process_id="process1")
+
+    writer.append_event(
+        RuntimeEvent(
+            event_id=1,
+            runtime_id="runtime1",
+            process_id="process1",
+            event_type="process.status.changed",
+            timestamp=1.0,
+            status=RuntimeEventStatus.RUNNING,
+            status_class=RuntimeStatusClass.ACTIVE,
+        )
+    )
+    writer.append_event(
+        RuntimeEvent(
+            event_id=2,
+            runtime_id="runtime1",
+            process_id="process1",
+            event_type="log.emitted",
+            timestamp=2.0,
+            message="still running",
+        )
+    )
+
+    projection = RuntimeStore(runtime_dir).load_projection()
+    event_store = writer.store()
+    event_store.load()
+
+    assert projection is not None
+    assert projection.event_count == 1
+    assert projection.processes["process1"].status == RuntimeEventStatus.RUNNING
+    assert event_store.list()[1].event_type == "log.emitted"
 
 
 def test_txn_event_payload_adapter_round_trips_legacy_shape():

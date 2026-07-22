@@ -101,6 +101,10 @@ Make standard events storable and compatible with current `TxnEvent`.
   - already-normalized `RuntimeEvent` objects
   - legacy `TxnEvent`-like dictionaries
   - Flowlet manager records (`progress`, `signal`, `log`, `stream`, `telemetry`)
+- Stateful sidecar events refresh `runtime/projection.json`; log and stream
+  events remain append-only without forcing a full projection rebuild.
+- MetaMSTools and MassLib4Search backend regressions verify that a persisted
+  runtime contains a projection with the completed job process state.
 - The sidecar writer is framework-only and does not import MetaMSTools or MassLib4Search.
 
 ### Business Backend Integration Notes
