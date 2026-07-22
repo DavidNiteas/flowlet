@@ -106,12 +106,19 @@ new fields are optional or have backward-compatible defaults.
 1. Completed: schema baseline for dependencies, execution identity,
    idempotency, checkpoint policy, attempts, checkpoint references, decisions,
    and plans.
-2. Add graph validation and deterministic topological ordering.
-3. Extend framework projection with attempts and committed checkpoints.
-4. Implement a planner that combines framework eligibility with
-   package-supplied decisions and persists `runtime/recovery_plans/*.json`.
-5. Add a local recovery executor that emits events before dispatching package
-   hooks and never reconstructs business implementations from manifests.
+2. Completed: graph validation, deterministic topological ordering, and
+   transitive downstream invalidation closure.
+3. Completed: framework projection retains immutable attempt history and only
+   indexes explicitly committed, structurally valid recoverable checkpoints.
+4. Completed: planner combines complete package-supplied decisions with hard
+   framework eligibility checks and persists `runtime/recovery_plans/*.json`
+   before execution.
+5. Completed: local recovery executor persists an unblocked plan, emits
+   recovery and immutable attempt events, dispatches registered package hooks,
+   and never reconstructs business implementations from manifests.
+   `RuntimeProcessContext.commit_checkpoint()` and `invalidate_checkpoint()`
+   are the only framework helpers that add/remove recoverable checkpoint
+   references; the legacy `checkpoint()` helper remains telemetry-only.
 6. Add MetaMSTools and MassLib4Search adapters and package-level tests.
 7. Run isolated real-liver skip, failure/retry, and checkpoint-resume cases.
 

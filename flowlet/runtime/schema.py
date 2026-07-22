@@ -55,6 +55,7 @@ class RuntimeEventType(StrEnum):
     RECOVERY_PLANNED = "runtime.recovery.planned"
     RECOVERY_STARTED = "runtime.recovery.started"
     RECOVERY_COMPLETED = "runtime.recovery.completed"
+    RECOVERY_FAILED = "runtime.recovery.failed"
     UNIT_STARTED = "unit.started"
     UNIT_PROGRESSED = "unit.progressed"
     UNIT_COMPLETED = "unit.completed"

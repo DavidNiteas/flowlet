@@ -18,6 +18,39 @@ compatibility anchors. Existing telemetry checkpoints are explicitly not
 treated as recoverable state. Graph validation, projection, planning,
 persistence, and execution dispatch are the next implementation increment.
 
+`build_runtime_process_graph()` now validates duplicate process ids, missing
+dependencies, self-dependencies, and cycles. It produces a deterministic
+topological order and computes transitive downstream process closure for later
+invalidation planning. Observation hierarchy remains independent from this
+dependency DAG.
+
+`RuntimeProjection` now retains attempts by immutable `attempt_id`, process to
+attempt ordering, committed checkpoint references, and the latest valid
+checkpoint per process. A later successful attempt does not erase an earlier
+failed attempt. Legacy `process.checkpointed` telemetry is deliberately not
+indexed; only a valid `checkpoint.committed` envelope is recoverable, and an
+invalidation event removes it from the active checkpoint index.
+
+`RuntimeRecoveryPlanner` now requires one package decision per declared
+process, orders the plan through the validated dependency DAG, and converts
+unsafe actions to `block`. Framework checks cover source success for skip,
+committed and fingerprint/version-compatible checkpoints for resume,
+capabilities, idempotency, retry limits, dependency blocking, and stale
+downstream skips after upstream reexecution. `RuntimeStore` persists plans at
+`runtime/recovery_plans/<plan_id>.json` before a later executor dispatches them.
+
+`RuntimeBackendExecutor.execute_recovery_plan()` now rejects blocked, wrong-
+target, unpersistable, or unregistered plans before dispatch. It persists an
+accepted plan first, records runtime recovery boundaries, records immutable
+attempt creation/start/completion/failure, emits skip reuse without fabricating
+an execution attempt, and invokes only registered package `resume`, `retry`, or
+`start` hooks. Failures retain the failed attempt and stop the plan.
+
+Process implementations now commit and invalidate recoverable references
+through explicit context methods that enforce process and attempt identity.
+The existing `checkpoint()` method remains unchanged as telemetry, preventing
+old manager records from accidentally becoming executable recovery state.
+
 ### Current-Layout Regression Audit
 
 The real liver workspace was reclassified into two evidence levels:

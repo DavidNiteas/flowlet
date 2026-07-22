@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .process import RuntimeCheckpointMode, RuntimeIdempotency, RuntimeProcessOperation, RuntimeProcessSpec
 from .schema import RuntimeErrorInfo, RuntimeEventStatus, RuntimeStatusClass
+
+if TYPE_CHECKING:
+    from .projection import RuntimeProjection
 
 
 class RuntimeRecoveryAction(StrEnum):
@@ -18,6 +22,98 @@ class RuntimeRecoveryAction(StrEnum):
     RETRY = "retry"
     RESTART = "restart"
     BLOCK = "block"
+
+
+class RuntimeRecoveryGraphError(ValueError):
+    """Raised when process declarations do not form a valid dependency DAG."""
+
+
+class RuntimeRecoveryPlanError(ValueError):
+    """Raised when supplied recovery decisions cannot form a complete plan."""
+
+
+class RuntimeRecoveryExecutionError(RuntimeError):
+    """Raised before dispatch when a recovery plan is not executable."""
+
+
+class RuntimeProcessGraph(BaseModel):
+    """Validated dependency graph with deterministic topological ordering."""
+
+    process_ids: list[str]
+    topological_order: list[str]
+    dependencies: dict[str, list[str]]
+    dependents: dict[str, list[str]]
+
+    def downstream(self, process_ids: list[str] | set[str]) -> list[str]:
+        """Return all transitive dependents in topological order."""
+        unknown = set(process_ids).difference(self.process_ids)
+        if unknown:
+            raise KeyError(f"Unknown process ids: {sorted(unknown)!r}")
+        found: set[str] = set()
+        pending = list(process_ids)
+        while pending:
+            process_id = pending.pop()
+            for dependent in self.dependents[process_id]:
+                if dependent not in found:
+                    found.add(dependent)
+                    pending.append(dependent)
+        return [process_id for process_id in self.topological_order if process_id in found]
+
+
+def build_runtime_process_graph(specs: list[RuntimeProcessSpec]) -> RuntimeProcessGraph:
+    """Validate declarations and return their deterministic dependency DAG."""
+    specs_by_id: dict[str, RuntimeProcessSpec] = {}
+    for spec in specs:
+        process_id = spec.resolved_process_id()
+        if process_id in specs_by_id:
+            raise RuntimeRecoveryGraphError(f"Duplicate process_id: {process_id!r}")
+        specs_by_id[process_id] = spec
+
+    process_ids = sorted(specs_by_id)
+    dependencies: dict[str, list[str]] = {}
+    dependents = {process_id: [] for process_id in process_ids}
+    for process_id in process_ids:
+        declared = sorted(specs_by_id[process_id].depends_on)
+        if process_id in declared:
+            raise RuntimeRecoveryGraphError(f"Process {process_id!r} cannot depend on itself")
+        missing = set(declared).difference(specs_by_id)
+        if missing:
+            raise RuntimeRecoveryGraphError(
+                f"Process {process_id!r} has unknown dependencies: {sorted(missing)!r}"
+            )
+        dependencies[process_id] = declared
+        for dependency in declared:
+            dependents[dependency].append(process_id)
+    for values in dependents.values():
+        values.sort()
+
+    remaining_dependency_count = {
+        process_id: len(dependencies[process_id]) for process_id in process_ids
+    }
+    ready = sorted(
+        process_id for process_id, count in remaining_dependency_count.items() if count == 0
+    )
+    topological_order: list[str] = []
+    while ready:
+        process_id = ready.pop(0)
+        topological_order.append(process_id)
+        for dependent in dependents[process_id]:
+            remaining_dependency_count[dependent] -= 1
+            if remaining_dependency_count[dependent] == 0:
+                ready.append(dependent)
+                ready.sort()
+    if len(topological_order) != len(process_ids):
+        cycle_process_ids = sorted(set(process_ids).difference(topological_order))
+        raise RuntimeRecoveryGraphError(
+            f"Process dependency graph contains a cycle involving: {cycle_process_ids!r}"
+        )
+
+    return RuntimeProcessGraph(
+        process_ids=process_ids,
+        topological_order=topological_order,
+        dependencies=dependencies,
+        dependents=dependents,
+    )
 
 
 class RuntimeCheckpointRef(BaseModel):
@@ -74,6 +170,7 @@ class RuntimeRecoveryDecision(BaseModel):
     source_attempt_id: str | None = None
     checkpoint: RuntimeCheckpointRef | None = None
     invalidates: list[str] = Field(default_factory=list)
+    preserve_on_upstream_reexecution: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -95,6 +192,7 @@ class RuntimeRecoveryStep(BaseModel):
     source_attempt_id: str | None = None
     checkpoint: RuntimeCheckpointRef | None = None
     invalidates: list[str] = Field(default_factory=list)
+    preserve_on_upstream_reexecution: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -123,3 +221,131 @@ class RuntimeRecoveryPlan(BaseModel):
         if len(process_ids) != len(set(process_ids)):
             raise ValueError("recovery plan process_ids must be unique")
         return self
+
+
+class RuntimeRecoveryPlanner:
+    """Build deterministic plans from framework state and package decisions."""
+
+    def create_plan(
+        self,
+        *,
+        specs: list[RuntimeProcessSpec],
+        source_projection: RuntimeProjection,
+        decisions: list[RuntimeRecoveryDecision],
+        plan_id: str,
+        target_runtime_id: str,
+        created_at: float,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeRecoveryPlan:
+        """Validate package decisions and return a reviewable recovery plan."""
+        graph = build_runtime_process_graph(specs)
+        specs_by_id = {spec.resolved_process_id(): spec for spec in specs}
+        decisions_by_id = {decision.process_id: decision for decision in decisions}
+        if len(decisions_by_id) != len(decisions):
+            raise RuntimeRecoveryPlanError("Recovery decisions must contain unique process_ids")
+        missing = set(graph.process_ids).difference(decisions_by_id)
+        unknown = set(decisions_by_id).difference(graph.process_ids)
+        if missing or unknown:
+            raise RuntimeRecoveryPlanError(
+                f"Recovery decision coverage mismatch: missing={sorted(missing)!r}, unknown={sorted(unknown)!r}"
+            )
+
+        steps_by_id: dict[str, RuntimeRecoveryStep] = {}
+        reexecuted: set[str] = set()
+        for process_id in graph.topological_order:
+            decision = decisions_by_id[process_id]
+            action, reason = self._eligible_action(
+                spec=specs_by_id[process_id],
+                projection=source_projection,
+                decision=decision,
+            )
+            blocking_dependencies = [
+                dependency
+                for dependency in graph.dependencies[process_id]
+                if steps_by_id[dependency].action == RuntimeRecoveryAction.BLOCK
+            ]
+            changed_dependencies = [
+                dependency for dependency in graph.dependencies[process_id] if dependency in reexecuted
+            ]
+            if blocking_dependencies:
+                action = RuntimeRecoveryAction.BLOCK
+                reason = f"blocked by dependencies: {blocking_dependencies!r}"
+            elif (
+                action == RuntimeRecoveryAction.SKIP
+                and changed_dependencies
+                and not decision.preserve_on_upstream_reexecution
+            ):
+                action = RuntimeRecoveryAction.BLOCK
+                reason = f"upstream reexecution invalidates skip: {changed_dependencies!r}"
+
+            invalidates = set(decision.invalidates)
+            if action in {
+                RuntimeRecoveryAction.RESUME,
+                RuntimeRecoveryAction.RETRY,
+                RuntimeRecoveryAction.RESTART,
+            }:
+                reexecuted.add(process_id)
+                invalidates.update(graph.downstream({process_id}))
+            steps_by_id[process_id] = RuntimeRecoveryStep(
+                process_id=process_id,
+                action=action,
+                reason=reason,
+                depends_on=graph.dependencies[process_id],
+                source_attempt_id=decision.source_attempt_id,
+                checkpoint=decision.checkpoint,
+                invalidates=sorted(invalidates),
+                preserve_on_upstream_reexecution=decision.preserve_on_upstream_reexecution,
+                metadata=decision.metadata,
+            )
+
+        return RuntimeRecoveryPlan(
+            plan_id=plan_id,
+            source_runtime_id=source_projection.runtime_id,
+            target_runtime_id=target_runtime_id,
+            created_at=created_at,
+            steps=[steps_by_id[process_id] for process_id in graph.topological_order],
+            metadata=metadata or {},
+        )
+
+    @staticmethod
+    def _eligible_action(
+        *,
+        spec: RuntimeProcessSpec,
+        projection: RuntimeProjection,
+        decision: RuntimeRecoveryDecision,
+    ) -> tuple[RuntimeRecoveryAction, str]:
+        process_id = spec.resolved_process_id()
+        state = projection.processes.get(process_id)
+        if decision.action == RuntimeRecoveryAction.SKIP:
+            if state is None or state.status_class != RuntimeStatusClass.TERMINAL_SUCCESS:
+                return RuntimeRecoveryAction.BLOCK, "skip requires a terminal-success source process"
+        elif decision.action == RuntimeRecoveryAction.RESUME:
+            if not spec.capabilities.supports(RuntimeProcessOperation.RESUME):
+                return RuntimeRecoveryAction.BLOCK, "process does not declare resume capability"
+            if spec.checkpoint_policy.mode == RuntimeCheckpointMode.NONE:
+                return RuntimeRecoveryAction.BLOCK, "process does not declare recoverable checkpoints"
+            checkpoint = decision.checkpoint
+            if checkpoint is None or projection.checkpoints.get(checkpoint.checkpoint_id) != checkpoint:
+                return RuntimeRecoveryAction.BLOCK, "checkpoint is not committed in the source projection"
+            if spec.input_fingerprint is not None and checkpoint.input_fingerprint != spec.input_fingerprint:
+                return RuntimeRecoveryAction.BLOCK, "checkpoint input fingerprint does not match"
+            if (
+                spec.implementation_version is not None
+                and checkpoint.implementation_version != spec.implementation_version
+            ):
+                return RuntimeRecoveryAction.BLOCK, "checkpoint implementation version does not match"
+        elif decision.action == RuntimeRecoveryAction.RETRY:
+            if not spec.capabilities.supports(RuntimeProcessOperation.RETRY):
+                return RuntimeRecoveryAction.BLOCK, "process does not declare retry capability"
+            if spec.idempotency == RuntimeIdempotency.NON_IDEMPOTENT:
+                return RuntimeRecoveryAction.BLOCK, "non-idempotent process cannot be retried automatically"
+            attempts = projection.process_attempt_ids.get(process_id, [])
+            max_attempts = spec.retry_policy.max_attempts if spec.retry_policy is not None else 1
+            if len(attempts) >= max_attempts:
+                return RuntimeRecoveryAction.BLOCK, "process retry policy is exhausted"
+        elif decision.action == RuntimeRecoveryAction.RESTART:
+            if not spec.capabilities.supports(RuntimeProcessOperation.START):
+                return RuntimeRecoveryAction.BLOCK, "process does not declare start capability"
+            if spec.idempotency == RuntimeIdempotency.NON_IDEMPOTENT:
+                return RuntimeRecoveryAction.BLOCK, "non-idempotent process cannot restart automatically"
+        return decision.action, decision.reason

@@ -27,15 +27,21 @@ from flowlet.runtime import (
     RuntimeProcessBase,
     RuntimeProcessCapabilities,
     RuntimeProcessContext,
+    RuntimeProcessGraph,
     RuntimeProcessOperation,
     RuntimeProcessRunner,
     RuntimeProcessSpec,
+    RuntimeProcessState,
     RuntimeProgress,
     RuntimeProjection,
     RuntimeProjectionPolicy,
     RuntimeRecoveryAction,
     RuntimeRecoveryDecision,
+    RuntimeRecoveryExecutionError,
+    RuntimeRecoveryGraphError,
     RuntimeRecoveryPlan,
+    RuntimeRecoveryPlanError,
+    RuntimeRecoveryPlanner,
     RuntimeRecoveryStep,
     RuntimeReducer,
     RuntimeResourceRequest,
@@ -45,6 +51,7 @@ from flowlet.runtime import (
     RuntimeStatusClass,
     RuntimeStore,
     RuntimeUnsupportedOperationError,
+    build_runtime_process_graph,
     list_runtime_artifacts,
     load_runtime_observation,
     load_runtime_projection,
@@ -315,6 +322,421 @@ def test_recovery_contracts_reject_ambiguous_or_unsafe_declarations():
         )
 
 
+def test_runtime_process_graph_validates_dependencies_and_finds_downstream():
+    graph = build_runtime_process_graph(
+        [
+            RuntimeProcessSpec(process_id="finalize", process_type="example.finalize", depends_on=["score"]),
+            RuntimeProcessSpec(process_id="prepare", process_type="example.prepare"),
+            RuntimeProcessSpec(process_id="report", process_type="example.report", depends_on=["score"]),
+            RuntimeProcessSpec(process_id="score", process_type="example.score", depends_on=["prepare"]),
+        ]
+    )
+
+    assert isinstance(graph, RuntimeProcessGraph)
+    assert graph.topological_order == ["prepare", "score", "finalize", "report"]
+    assert graph.dependencies["score"] == ["prepare"]
+    assert graph.downstream({"prepare"}) == ["score", "finalize", "report"]
+    assert graph.downstream({"score"}) == ["finalize", "report"]
+
+
+@pytest.mark.parametrize(
+    ("specs", "message"),
+    [
+        (
+            [
+                RuntimeProcessSpec(process_id="same", process_type="example.one"),
+                RuntimeProcessSpec(process_id="same", process_type="example.two"),
+            ],
+            "Duplicate process_id",
+        ),
+        (
+            [RuntimeProcessSpec(process_id="self", process_type="example.self", depends_on=["self"])],
+            "cannot depend on itself",
+        ),
+        (
+            [RuntimeProcessSpec(process_id="child", process_type="example.child", depends_on=["missing"])],
+            "unknown dependencies",
+        ),
+        (
+            [
+                RuntimeProcessSpec(process_id="one", process_type="example.one", depends_on=["two"]),
+                RuntimeProcessSpec(process_id="two", process_type="example.two", depends_on=["one"]),
+            ],
+            "contains a cycle",
+        ),
+    ],
+)
+def test_runtime_process_graph_rejects_invalid_declarations(specs, message):
+    with pytest.raises(RuntimeRecoveryGraphError, match=message):
+        build_runtime_process_graph(specs)
+
+
+def test_runtime_projection_preserves_attempt_history_and_committed_checkpoints():
+    checkpoint = RuntimeCheckpointRef(
+        checkpoint_id="checkpoint-1",
+        process_id="score",
+        attempt_id="attempt-1",
+        created_at=3.0,
+        cursor={"committed_index": 4},
+    )
+    events = [
+        RuntimeEvent(
+            event_id=1,
+            runtime_id="runtime1",
+            process_id="score",
+            attempt_id="attempt-1",
+            event_type=RuntimeEventType.PROCESS_ATTEMPT_STARTED,
+            timestamp=1.0,
+            payload={"ordinal": 1},
+        ),
+        RuntimeEvent(
+            event_id=2,
+            runtime_id="runtime1",
+            process_id="score",
+            attempt_id="attempt-1",
+            event_type=RuntimeEventType.PROCESS_ATTEMPT_FAILED,
+            timestamp=2.0,
+            error=RuntimeErrorInfo(type="TransientError", message="retry"),
+        ),
+        RuntimeEvent(
+            event_id=3,
+            runtime_id="runtime1",
+            process_id="score",
+            attempt_id="attempt-1",
+            checkpoint_id=checkpoint.checkpoint_id,
+            event_type=RuntimeEventType.CHECKPOINT_COMMITTED,
+            timestamp=3.0,
+            payload={"checkpoint": checkpoint.model_dump(mode="json")},
+        ),
+        RuntimeEvent(
+            event_id=4,
+            runtime_id="runtime1",
+            process_id="score",
+            attempt_id="attempt-2",
+            checkpoint_id=checkpoint.checkpoint_id,
+            event_type=RuntimeEventType.PROCESS_ATTEMPT_STARTED,
+            timestamp=4.0,
+            payload={"ordinal": 2, "resumed_from_attempt_id": "attempt-1"},
+        ),
+        RuntimeEvent(
+            event_id=5,
+            runtime_id="runtime1",
+            process_id="score",
+            attempt_id="attempt-2",
+            event_type=RuntimeEventType.PROCESS_ATTEMPT_COMPLETED,
+            timestamp=5.0,
+        ),
+    ]
+
+    projection = RuntimeFrameworkReducer().reduce(events)
+
+    assert projection.process_attempt_ids["score"] == ["attempt-1", "attempt-2"]
+    assert projection.attempts["attempt-1"].status_class == RuntimeStatusClass.TERMINAL_FAILURE
+    assert projection.attempts["attempt-2"].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert projection.attempts["attempt-2"].resumed_from_attempt_id == "attempt-1"
+    assert projection.processes["score"].current_attempt_id == "attempt-2"
+    assert projection.processes["score"].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert projection.status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert projection.checkpoints["checkpoint-1"] == checkpoint
+    assert projection.latest_checkpoint_by_process == {"score": "checkpoint-1"}
+
+
+def test_runtime_projection_ignores_observation_checkpoint_and_removes_invalidated_checkpoint():
+    checkpoint = RuntimeCheckpointRef(
+        checkpoint_id="checkpoint-1",
+        process_id="score",
+        attempt_id="attempt-1",
+        created_at=1.0,
+    )
+    events = [
+        RuntimeEvent(
+            event_id=1,
+            runtime_id="runtime1",
+            process_id="score",
+            event_type=RuntimeEventType.PROCESS_CHECKPOINTED,
+            timestamp=1.0,
+            payload={"name": "telemetry-only"},
+        ),
+        RuntimeEvent(
+            event_id=2,
+            runtime_id="runtime1",
+            process_id="score",
+            attempt_id="attempt-1",
+            checkpoint_id="checkpoint-1",
+            event_type=RuntimeEventType.CHECKPOINT_COMMITTED,
+            timestamp=2.0,
+            payload={"checkpoint": checkpoint.model_dump(mode="json")},
+        ),
+        RuntimeEvent(
+            event_id=3,
+            runtime_id="runtime1",
+            process_id="score",
+            attempt_id="attempt-1",
+            checkpoint_id="checkpoint-1",
+            event_type=RuntimeEventType.CHECKPOINT_INVALIDATED,
+            timestamp=3.0,
+        ),
+    ]
+
+    projection = RuntimeFrameworkReducer().reduce(events)
+
+    assert projection.checkpoints == {}
+    assert projection.latest_checkpoint_by_process == {}
+
+
+def test_runtime_recovery_planner_blocks_stale_downstream_skip_and_persists_plan(tmp_path):
+    specs = [
+        RuntimeProcessSpec(process_id="prepare", process_type="example.prepare"),
+        RuntimeProcessSpec(
+            process_id="score",
+            process_type="example.score",
+            depends_on=["prepare"],
+            idempotency=RuntimeIdempotency.IDEMPOTENT,
+            capabilities=RuntimeProcessCapabilities(can_retry=True),
+            retry_policy=RuntimeRetryPolicy(max_attempts=3),
+        ),
+        RuntimeProcessSpec(process_id="report", process_type="example.report", depends_on=["score"]),
+    ]
+    projection = RuntimeProjection(
+        runtime_id="runtime-old",
+        processes={
+            "prepare": RuntimeProcessState(
+                process_id="prepare",
+                status=RuntimeEventStatus.SUCCEEDED,
+                status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+            ),
+            "score": RuntimeProcessState(
+                process_id="score",
+                status=RuntimeEventStatus.FAILED,
+                status_class=RuntimeStatusClass.TERMINAL_FAILURE,
+            ),
+            "report": RuntimeProcessState(
+                process_id="report",
+                status=RuntimeEventStatus.SUCCEEDED,
+                status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+            ),
+        },
+        process_attempt_ids={"score": ["attempt-1"]},
+    )
+    plan = RuntimeRecoveryPlanner().create_plan(
+        specs=specs,
+        source_projection=projection,
+        decisions=[
+            RuntimeRecoveryDecision(
+                process_id="prepare",
+                action=RuntimeRecoveryAction.SKIP,
+                reason="validated output",
+            ),
+            RuntimeRecoveryDecision(
+                process_id="score",
+                action=RuntimeRecoveryAction.RETRY,
+                reason="transient failure",
+            ),
+            RuntimeRecoveryDecision(
+                process_id="report",
+                action=RuntimeRecoveryAction.SKIP,
+                reason="previous report exists",
+            ),
+        ],
+        plan_id="plan-1",
+        target_runtime_id="runtime-new",
+        created_at=10.0,
+    )
+    plan_path = RuntimeStore(tmp_path).write_recovery_plan(plan)
+    restored = RuntimeStore(tmp_path).load_recovery_plan("plan-1")
+
+    assert [step.process_id for step in plan.steps] == ["prepare", "score", "report"]
+    assert [step.action for step in plan.steps] == [
+        RuntimeRecoveryAction.SKIP,
+        RuntimeRecoveryAction.RETRY,
+        RuntimeRecoveryAction.BLOCK,
+    ]
+    assert plan.steps[1].invalidates == ["report"]
+    assert "upstream reexecution invalidates skip" in plan.steps[2].reason
+    assert plan_path == tmp_path / "runtime" / "recovery_plans" / "plan-1.json"
+    assert restored == plan
+
+
+def test_runtime_recovery_planner_accepts_only_committed_compatible_checkpoint():
+    checkpoint = RuntimeCheckpointRef(
+        checkpoint_id="checkpoint-1",
+        process_id="score",
+        attempt_id="attempt-1",
+        created_at=2.0,
+        input_fingerprint="sha256:input",
+        implementation_version="2",
+    )
+    spec = RuntimeProcessSpec(
+        process_id="score",
+        process_type="example.score",
+        input_fingerprint="sha256:input",
+        implementation_version="2",
+        capabilities=RuntimeProcessCapabilities(can_resume=True),
+        checkpoint_policy=RuntimeCheckpointPolicy(mode=RuntimeCheckpointMode.OPTIONAL),
+    )
+    projection = RuntimeProjection(
+        runtime_id="runtime-old",
+        checkpoints={checkpoint.checkpoint_id: checkpoint},
+    )
+    plan = RuntimeRecoveryPlanner().create_plan(
+        specs=[spec],
+        source_projection=projection,
+        decisions=[
+            RuntimeRecoveryDecision(
+                process_id="score",
+                action=RuntimeRecoveryAction.RESUME,
+                reason="checkpoint validated",
+                source_attempt_id="attempt-1",
+                checkpoint=checkpoint,
+            )
+        ],
+        plan_id="plan-1",
+        target_runtime_id="runtime-new",
+        created_at=3.0,
+    )
+
+    assert plan.steps[0].action == RuntimeRecoveryAction.RESUME
+    assert plan.steps[0].checkpoint == checkpoint
+
+    incompatible = checkpoint.model_copy(update={"input_fingerprint": "sha256:changed"})
+    blocked = RuntimeRecoveryPlanner().create_plan(
+        specs=[spec],
+        source_projection=projection,
+        decisions=[
+            RuntimeRecoveryDecision(
+                process_id="score",
+                action=RuntimeRecoveryAction.RESUME,
+                reason="stale checkpoint",
+                checkpoint=incompatible,
+            )
+        ],
+        plan_id="plan-2",
+        target_runtime_id="runtime-new",
+        created_at=4.0,
+    )
+
+    assert blocked.steps[0].action == RuntimeRecoveryAction.BLOCK
+    assert blocked.steps[0].reason == "checkpoint is not committed in the source projection"
+
+
+def test_runtime_recovery_planner_requires_complete_package_decisions():
+    with pytest.raises(RuntimeRecoveryPlanError, match="coverage mismatch"):
+        RuntimeRecoveryPlanner().create_plan(
+            specs=[RuntimeProcessSpec(process_id="prepare", process_type="example.prepare")],
+            source_projection=RuntimeProjection(runtime_id="runtime-old"),
+            decisions=[],
+            plan_id="plan-1",
+            target_runtime_id="runtime-new",
+            created_at=1.0,
+        )
+
+
+def test_runtime_backend_executor_persists_and_executes_recovery_plan(tmp_path):
+    runtime_dir = tmp_path / "runtime"
+
+    class RetryProcess(RuntimeProcessBase):
+        def retry(self, context: RuntimeProcessContext) -> dict[str, bool]:
+            assert (runtime_dir / "runtime" / "recovery_plans" / "plan-1.json").exists()
+            assert context.attempt_id == "score:attempt:1"
+            return {"retried": True}
+
+    executor = RuntimeBackendExecutor(runtime_id="runtime-new", runtime_dir=runtime_dir)
+    executor.register(
+        RetryProcess(
+            RuntimeProcessSpec(
+                process_id="score",
+                process_type="example.score",
+                capabilities=RuntimeProcessCapabilities(can_retry=True),
+            )
+        )
+    )
+    plan = RuntimeRecoveryPlan(
+        plan_id="plan-1",
+        source_runtime_id="runtime-old",
+        target_runtime_id="runtime-new",
+        created_at=1.0,
+        steps=[
+            RuntimeRecoveryStep(
+                process_id="prepare",
+                action=RuntimeRecoveryAction.SKIP,
+                reason="validated output",
+                source_attempt_id="prepare:attempt:1",
+            ),
+            RuntimeRecoveryStep(
+                process_id="score",
+                action=RuntimeRecoveryAction.RETRY,
+                reason="transient failure",
+                depends_on=["prepare"],
+                source_attempt_id="score:attempt:old",
+            ),
+        ],
+    )
+
+    results = executor.execute_recovery_plan(plan)
+    projection = executor.projection()
+    event_types = [event.event_type for event in executor.event_store.list()]
+
+    assert results == {"prepare": None, "score": {"retried": True}}
+    assert RuntimeEventType.RECOVERY_STARTED in event_types
+    assert RuntimeEventType.PROCESS_ATTEMPT_CREATED in event_types
+    assert RuntimeEventType.PROCESS_ATTEMPT_COMPLETED in event_types
+    assert event_types[-1] == RuntimeEventType.RECOVERY_COMPLETED
+    assert projection.processes["prepare"].status == RuntimeEventStatus.SKIPPED
+    assert projection.attempts["score:attempt:1"].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert projection.attempts["score:attempt:1"].resumed_from_attempt_id == "score:attempt:old"
+
+
+def test_runtime_backend_executor_records_failed_recovery_attempt(tmp_path):
+    class FailingProcess(RuntimeProcessBase):
+        def start(self, context: RuntimeProcessContext) -> None:
+            raise RuntimeError(f"failed {context.attempt_id}")
+
+    executor = RuntimeBackendExecutor(runtime_id="runtime-new", runtime_dir=tmp_path / "runtime")
+    executor.register(FailingProcess(RuntimeProcessSpec(process_id="score", process_type="example.score")))
+    plan = RuntimeRecoveryPlan(
+        plan_id="plan-1",
+        source_runtime_id="runtime-old",
+        target_runtime_id="runtime-new",
+        created_at=1.0,
+        steps=[
+            RuntimeRecoveryStep(
+                process_id="score",
+                action=RuntimeRecoveryAction.RESTART,
+                reason="start over",
+            )
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="failed score:attempt:1"):
+        executor.execute_recovery_plan(plan)
+
+    projection = executor.projection()
+    assert projection.attempts["score:attempt:1"].status_class == RuntimeStatusClass.TERMINAL_FAILURE
+    assert executor.event_store.list()[-1].event_type == RuntimeEventType.RECOVERY_FAILED
+
+
+def test_runtime_backend_executor_rejects_blocked_recovery_plan_before_dispatch(tmp_path):
+    executor = RuntimeBackendExecutor(runtime_id="runtime-new", runtime_dir=tmp_path / "runtime")
+    plan = RuntimeRecoveryPlan(
+        plan_id="blocked",
+        source_runtime_id="runtime-old",
+        target_runtime_id="runtime-new",
+        created_at=1.0,
+        steps=[
+            RuntimeRecoveryStep(
+                process_id="score",
+                action=RuntimeRecoveryAction.BLOCK,
+                reason="requires review",
+            )
+        ],
+    )
+
+    with pytest.raises(RuntimeRecoveryExecutionError, match="contains blocked processes"):
+        executor.execute_recovery_plan(plan)
+
+    assert not (tmp_path / "runtime" / "runtime" / "recovery_plans" / "blocked.json").exists()
+
+
 def test_runtime_process_context_emits_standard_events(tmp_path):
     store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
     context = RuntimeProcessContext(
@@ -365,6 +787,36 @@ def test_runtime_process_context_emits_auxiliary_events(tmp_path):
     assert signal.payload == {"name": "ready", "value": True}
     assert signal.status_class == RuntimeStatusClass.ACTIVE
     assert checkpoint.payload == {"name": "stage-ready", "stage": "prepare"}
+
+
+def test_runtime_process_context_commits_and_invalidates_recoverable_checkpoint(tmp_path):
+    store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
+    context = RuntimeProcessContext(
+        runtime_id="runtime1",
+        process_id="score",
+        attempt_id="attempt-1",
+        event_store=store,
+    )
+    checkpoint = RuntimeCheckpointRef(
+        checkpoint_id="checkpoint-1",
+        process_id="score",
+        attempt_id="attempt-1",
+        created_at=1.0,
+        cursor={"committed_index": 4},
+    )
+
+    committed = context.commit_checkpoint(checkpoint)
+    invalidated = context.invalidate_checkpoint(checkpoint.checkpoint_id, reason="input changed")
+
+    assert committed.event_type == RuntimeEventType.CHECKPOINT_COMMITTED
+    assert committed.attempt_id == "attempt-1"
+    assert committed.checkpoint_id == "checkpoint-1"
+    assert RuntimeCheckpointRef.model_validate(committed.payload["checkpoint"]) == checkpoint
+    assert invalidated.event_type == RuntimeEventType.CHECKPOINT_INVALIDATED
+    assert invalidated.payload == {"reason": "input changed"}
+
+    with pytest.raises(ValueError, match="attempt_id must match"):
+        context.commit_checkpoint(checkpoint.model_copy(update={"attempt_id": "attempt-other"}))
 
 
 def test_runtime_manager_event_bridge_mirrors_manager_changes(tmp_path):

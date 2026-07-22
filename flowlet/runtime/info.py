@@ -17,6 +17,7 @@ class RuntimeFileLayout(BaseModel):
     events: str = "events.jsonl"
     runtime_events: str = "runtime/events.runtime.jsonl"
     processes: str = "runtime/processes.json"
+    recovery_plans: str = "runtime/recovery_plans"
     snapshot: str = "snapshot.json"
     monitor_snapshot: str = "monitor_snapshot.json"
     progress: str = "runtime/progress.json"

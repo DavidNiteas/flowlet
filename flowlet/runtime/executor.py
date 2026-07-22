@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,13 @@ from .process import (
     RuntimeUnsupportedOperationError,
 )
 from .projection import RuntimeFrameworkReducer, RuntimeProjection, RuntimeProjectionPolicy
-from .schema import RuntimeEventStatus
+from .recovery import (
+    RuntimeRecoveryAction,
+    RuntimeRecoveryExecutionError,
+    RuntimeRecoveryPlan,
+    RuntimeRecoveryStep,
+)
+from .schema import RuntimeErrorInfo, RuntimeEvent, RuntimeEventStatus, RuntimeEventType, RuntimeStatusClass
 from .store import RuntimeStore
 
 
@@ -74,6 +81,65 @@ class RuntimeBackendExecutor:
         results: dict[str, Any] = {}
         for process_id in list(self._processes):
             results[process_id] = self.run_process(process_id)
+        return results
+
+    def execute_recovery_plan(self, plan: RuntimeRecoveryPlan) -> dict[str, Any]:
+        """Persist and execute an unblocked recovery plan in declared order."""
+        if self.runtime_dir is None:
+            raise RuntimeRecoveryExecutionError("runtime_dir is required to persist a recovery plan")
+        if plan.target_runtime_id != self.runtime_id:
+            raise RuntimeRecoveryExecutionError("recovery plan target_runtime_id does not match executor runtime_id")
+        blocked = [step.process_id for step in plan.steps if step.action == RuntimeRecoveryAction.BLOCK]
+        if blocked:
+            raise RuntimeRecoveryExecutionError(f"recovery plan contains blocked processes: {blocked!r}")
+        required_process_ids = {
+            step.process_id for step in plan.steps if step.action != RuntimeRecoveryAction.SKIP
+        }
+        missing = required_process_ids.difference(self._processes)
+        if missing:
+            raise RuntimeRecoveryExecutionError(f"recovery processes are not registered: {sorted(missing)!r}")
+        completed_steps: set[str] = set()
+        for step in plan.steps:
+            unavailable_dependencies = set(step.depends_on).difference(completed_steps)
+            if unavailable_dependencies:
+                raise RuntimeRecoveryExecutionError(
+                    f"recovery step {step.process_id!r} precedes dependencies: "
+                    f"{sorted(unavailable_dependencies)!r}"
+                )
+            completed_steps.add(step.process_id)
+
+        RuntimeStore(self.runtime_dir).write_recovery_plan(plan)
+        self._emit_recovery_event(
+            RuntimeEventType.RECOVERY_STARTED,
+            status=RuntimeEventStatus.RUNNING,
+            status_class=RuntimeStatusClass.ACTIVE,
+            payload={"plan_id": plan.plan_id, "source_runtime_id": plan.source_runtime_id},
+        )
+        results: dict[str, Any] = {}
+        try:
+            for step in plan.steps:
+                if step.action == RuntimeRecoveryAction.SKIP:
+                    self._emit_skip(step)
+                    results[step.process_id] = None
+                    continue
+                results[step.process_id] = self._execute_recovery_step(step)
+        except Exception as exc:
+            self._emit_recovery_event(
+                RuntimeEventType.RECOVERY_FAILED,
+                status=RuntimeEventStatus.FAILED,
+                status_class=RuntimeStatusClass.TERMINAL_FAILURE,
+                error=RuntimeErrorInfo(type=type(exc).__name__, message=str(exc)),
+                payload={"plan_id": plan.plan_id},
+            )
+            self.write_projection()
+            raise
+        self._emit_recovery_event(
+            RuntimeEventType.RECOVERY_COMPLETED,
+            status=RuntimeEventStatus.SUCCEEDED,
+            status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+            payload={"plan_id": plan.plan_id},
+        )
+        self.write_projection()
         return results
 
     def cancel_process(self, process_id: str) -> None:
@@ -158,16 +224,146 @@ class RuntimeBackendExecutor:
         if self.runtime_dir is not None:
             RuntimeStore(self.runtime_dir).write_process_specs([process.spec for process in self._processes.values()])
 
-    def _context_for(self, process: RuntimeProcess) -> RuntimeProcessContext:
+    def _context_for(
+        self,
+        process: RuntimeProcess,
+        *,
+        attempt_id: str | None = None,
+        checkpoint_id: str | None = None,
+    ) -> RuntimeProcessContext:
         process_id = process.spec.resolved_process_id()
         return RuntimeProcessContext(
             runtime_id=self.runtime_id,
             process_id=process_id,
             parent_process_id=process.spec.parent_process_id,
+            attempt_id=attempt_id,
+            checkpoint_id=checkpoint_id,
             event_store=self.event_store,
             runtime_dir=self.runtime_dir,
             metadata=process.spec.metadata,
             event_id_start=_next_event_id(self.event_store.list()),
+        )
+
+    def _execute_recovery_step(self, step: RuntimeRecoveryStep) -> Any:
+        process = self._get_process(step.process_id)
+        existing_attempts = self.projection().process_attempt_ids.get(step.process_id, [])
+        ordinal = len(existing_attempts) + 1
+        attempt_id = f"{step.process_id}:attempt:{ordinal}"
+        checkpoint_id = step.checkpoint.checkpoint_id if step.checkpoint is not None else None
+        context = self._context_for(process, attempt_id=attempt_id, checkpoint_id=checkpoint_id)
+        attempt_payload: dict[str, Any] = {"ordinal": ordinal, "recovery_action": step.action}
+        if step.source_attempt_id is not None:
+            attempt_payload["resumed_from_attempt_id"] = step.source_attempt_id
+        self._emit_attempt_event(
+            context,
+            RuntimeEventType.PROCESS_ATTEMPT_CREATED,
+            status=RuntimeEventStatus.PENDING,
+            status_class=RuntimeStatusClass.NOT_STARTED,
+            payload=attempt_payload,
+        )
+        self._emit_attempt_event(
+            context,
+            RuntimeEventType.PROCESS_ATTEMPT_STARTED,
+            status=RuntimeEventStatus.RUNNING,
+            status_class=RuntimeStatusClass.ACTIVE,
+            payload=attempt_payload,
+        )
+        try:
+            if step.action == RuntimeRecoveryAction.RESUME:
+                result = process.resume(context)
+            elif step.action == RuntimeRecoveryAction.RETRY:
+                result = process.retry(context)
+            elif step.action == RuntimeRecoveryAction.RESTART:
+                result = process.start(context)
+            else:  # pragma: no cover - guarded by plan validation
+                raise RuntimeRecoveryExecutionError(f"unsupported recovery action: {step.action}")
+        except Exception as exc:
+            self._emit_attempt_event(
+                context,
+                RuntimeEventType.PROCESS_ATTEMPT_FAILED,
+                status=RuntimeEventStatus.FAILED,
+                status_class=RuntimeStatusClass.TERMINAL_FAILURE,
+                error=RuntimeErrorInfo(type=type(exc).__name__, message=str(exc)),
+                payload=attempt_payload,
+            )
+            raise
+        self._emit_attempt_event(
+            context,
+            RuntimeEventType.PROCESS_ATTEMPT_COMPLETED,
+            status=RuntimeEventStatus.SUCCEEDED,
+            status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+            payload={
+                **attempt_payload,
+                "result": result if isinstance(result, dict) else {"value": result},
+            },
+        )
+        return result
+
+    def _emit_attempt_event(
+        self,
+        context: RuntimeProcessContext,
+        event_type: RuntimeEventType,
+        *,
+        status: RuntimeEventStatus,
+        status_class: RuntimeStatusClass,
+        payload: dict[str, Any],
+        error: RuntimeErrorInfo | None = None,
+    ) -> RuntimeEvent:
+        return context.emit(
+            RuntimeEvent(
+                event_id=_next_event_id(self.event_store.list()),
+                runtime_id=self.runtime_id,
+                process_id=context.process_id,
+                parent_process_id=context.parent_process_id,
+                attempt_id=context.attempt_id,
+                checkpoint_id=context.checkpoint_id,
+                event_type=event_type,
+                timestamp=time.time(),
+                status=status,
+                status_class=status_class,
+                error=error,
+                payload=payload,
+            )
+        )
+
+    def _emit_skip(self, step: RuntimeRecoveryStep) -> RuntimeEvent:
+        return self.event_store.append(
+            RuntimeEvent(
+                event_id=_next_event_id(self.event_store.list()),
+                runtime_id=self.runtime_id,
+                process_id=step.process_id,
+                event_type=RuntimeEventType.PROCESS_STATUS_CHANGED,
+                timestamp=time.time(),
+                status=RuntimeEventStatus.SKIPPED,
+                status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+                payload={
+                    "recovery_action": step.action,
+                    "source_attempt_id": step.source_attempt_id,
+                    "reason": step.reason,
+                },
+            )
+        )
+
+    def _emit_recovery_event(
+        self,
+        event_type: RuntimeEventType,
+        *,
+        status: RuntimeEventStatus,
+        status_class: RuntimeStatusClass,
+        payload: dict[str, Any],
+        error: RuntimeErrorInfo | None = None,
+    ) -> RuntimeEvent:
+        return self.event_store.append(
+            RuntimeEvent(
+                event_id=_next_event_id(self.event_store.list()),
+                runtime_id=self.runtime_id,
+                event_type=event_type,
+                timestamp=time.time(),
+                status=status,
+                status_class=status_class,
+                error=error,
+                payload=payload,
+            )
         )
 
     def _get_process(self, process_id: str) -> RuntimeProcess:

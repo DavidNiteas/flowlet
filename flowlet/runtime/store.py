@@ -11,6 +11,7 @@ from .event_store import RuntimeEventJsonlStore
 from .info import RuntimeFileLayout
 from .process import RuntimeProcessSpec
 from .projection import RuntimeProjection
+from .recovery import RuntimeRecoveryPlan
 from .schema import RuntimeEvent
 
 
@@ -53,6 +54,19 @@ class RuntimeStore:
         if not isinstance(payload, list):
             raise ValueError(f"Runtime process manifest must be a JSON list: {path}")
         return [RuntimeProcessSpec.model_validate(item) for item in payload]
+
+    def write_recovery_plan(self, plan: RuntimeRecoveryPlan) -> Path:
+        """Persist a recovery plan before its business actions are dispatched."""
+        path = self.path(self.layout.recovery_plans) / f"{plan.plan_id}.json"
+        write_json(path, plan.model_dump(mode="json"))
+        return path
+
+    def load_recovery_plan(self, plan_id: str) -> RuntimeRecoveryPlan | None:
+        """Load one persisted recovery plan when present."""
+        path = self.path(self.layout.recovery_plans) / f"{plan_id}.json"
+        if not path.exists():
+            return None
+        return RuntimeRecoveryPlan.model_validate_json(path.read_text(encoding="utf-8"))
 
     def write_snapshot(self, payload: Any) -> None:
         write_json(self.path(self.layout.snapshot), payload)

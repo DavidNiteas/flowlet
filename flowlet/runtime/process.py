@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -18,6 +18,9 @@ from .schema import (
     RuntimeProgress,
     RuntimeStatusClass,
 )
+
+if TYPE_CHECKING:
+    from .recovery import RuntimeCheckpointRef
 
 
 class RuntimeProcessOperation(StrEnum):
@@ -179,6 +182,7 @@ class RuntimeProcessState(BaseModel):
     process_id: str
     process_type: str | None = None
     parent_process_id: str | None = None
+    current_attempt_id: str | None = None
     status: RuntimeEventStatus | str = RuntimeEventStatus.PENDING
     status_class: RuntimeStatusClass = RuntimeStatusClass.NOT_STARTED
     started_at: float | None = None
@@ -219,6 +223,8 @@ class RuntimeProcessContext:
         process_id: str,
         event_store: RuntimeEventStore,
         parent_process_id: str | None = None,
+        attempt_id: str | None = None,
+        checkpoint_id: str | None = None,
         runtime_dir: str | Path | None = None,
         metadata: dict[str, Any] | None = None,
         event_id_start: int = 1,
@@ -226,6 +232,8 @@ class RuntimeProcessContext:
         self.runtime_id = runtime_id
         self.process_id = process_id
         self.parent_process_id = parent_process_id
+        self.attempt_id = attempt_id
+        self.checkpoint_id = checkpoint_id
         self.event_store = event_store
         self.runtime_dir = Path(runtime_dir) if runtime_dir is not None else None
         self.metadata = metadata or {}
@@ -396,6 +404,41 @@ class RuntimeProcessContext:
         checkpoint_payload = {"name": name, **(payload or {})}
         return self._emit("process.checkpointed", payload=checkpoint_payload, metadata=metadata)
 
+    def commit_checkpoint(
+        self,
+        checkpoint: RuntimeCheckpointRef,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeEvent:
+        """Commit a package-created recoverable checkpoint reference."""
+        if checkpoint.process_id != self.process_id:
+            raise ValueError("checkpoint process_id must match the runtime process context")
+        if self.attempt_id is not None and checkpoint.attempt_id != self.attempt_id:
+            raise ValueError("checkpoint attempt_id must match the runtime process context")
+        return self._emit(
+            RuntimeEventType.CHECKPOINT_COMMITTED,
+            checkpoint_id=checkpoint.checkpoint_id,
+            payload={"checkpoint": checkpoint.model_dump(mode="json")},
+            metadata=metadata,
+        )
+
+    def invalidate_checkpoint(
+        self,
+        checkpoint_id: str,
+        *,
+        reason: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeEvent:
+        """Invalidate one previously committed recoverable checkpoint."""
+        if not checkpoint_id.strip():
+            raise ValueError("checkpoint_id must not be empty")
+        return self._emit(
+            RuntimeEventType.CHECKPOINT_INVALIDATED,
+            checkpoint_id=checkpoint_id,
+            payload={"reason": reason},
+            metadata=metadata,
+        )
+
     def request_cancel(self) -> None:
         """Mark this context as cancelled."""
         self._cancel_requested = True
@@ -428,6 +471,7 @@ class RuntimeProcessContext:
         progress: RuntimeProgress | None = None,
         message: str | None = None,
         error: RuntimeErrorInfo | None = None,
+        checkpoint_id: str | None = None,
         payload: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> RuntimeEvent:
@@ -436,6 +480,8 @@ class RuntimeProcessContext:
             runtime_id=self.runtime_id,
             process_id=self.process_id,
             parent_process_id=self.parent_process_id,
+            attempt_id=self.attempt_id,
+            checkpoint_id=checkpoint_id or self.checkpoint_id,
             event_type=event_type,
             timestamp=time.time(),
             subject_type="process",

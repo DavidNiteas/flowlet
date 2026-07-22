@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from .process import RuntimeProcessState, RuntimeResourceUsage
+from .recovery import RuntimeCheckpointRef, RuntimeProcessAttempt
 from .schema import (
     RuntimeErrorInfo,
     RuntimeEvent,
@@ -26,6 +27,10 @@ class RuntimeProjection(BaseModel):
     status_class: RuntimeStatusClass = RuntimeStatusClass.NOT_STARTED
     updated_at: float | None = None
     processes: dict[str, RuntimeProcessState] = Field(default_factory=dict)
+    attempts: dict[str, RuntimeProcessAttempt] = Field(default_factory=dict)
+    process_attempt_ids: dict[str, list[str]] = Field(default_factory=dict)
+    checkpoints: dict[str, RuntimeCheckpointRef] = Field(default_factory=dict)
+    latest_checkpoint_by_process: dict[str, str] = Field(default_factory=dict)
     active_process_ids: list[str] = Field(default_factory=list)
     terminal_success_count: int = 0
     terminal_failure_count: int = 0
@@ -67,6 +72,8 @@ class RuntimeFrameworkReducer:
         for event in ordered_events:
             projection.runtime_id = event.runtime_id
             projection.updated_at = event.timestamp
+            _apply_attempt_event(projection, event)
+            _apply_checkpoint_event(projection, event)
             _apply_process_event(projection, event)
             _apply_runtime_event(projection, event)
             _apply_indexes(projection, event)
@@ -107,12 +114,19 @@ def _apply_process_event(projection: RuntimeProjection, event: RuntimeEvent) -> 
         "updated_at": event.timestamp,
         "parent_process_id": event.parent_process_id or state.parent_process_id,
     }
+    if event.attempt_id is not None:
+        update["current_attempt_id"] = event.attempt_id
     if event.payload.get("process_type") is not None:
         update["process_type"] = str(event.payload["process_type"])
+    attempt_state = _ATTEMPT_EVENT_STATE.get(event.event_type)
     if event.status is not None:
         update["status"] = event.status
+    elif attempt_state is not None:
+        update["status"] = attempt_state[0]
     if event.status_class is not None:
         update["status_class"] = event.status_class
+    elif attempt_state is not None:
+        update["status_class"] = attempt_state[1]
     if event.progress is not None:
         update["progress"] = event.progress
         projection.progress_summary[event.process_id] = event.progress
@@ -122,22 +136,118 @@ def _apply_process_event(projection: RuntimeProjection, event: RuntimeEvent) -> 
     if resource_usage is not None:
         update["resource_usage"] = resource_usage
         projection.resource_usage_summary[event.process_id] = resource_usage
-    if (
-        event.event_type in {RuntimeEventType.PROCESS_STARTED, RuntimeEventType.PROCESS_STATUS_CHANGED}
-        and event.status_class == RuntimeStatusClass.ACTIVE
-    ):
+    effective_status_class = event.status_class or (attempt_state[1] if attempt_state is not None else None)
+    if effective_status_class == RuntimeStatusClass.ACTIVE:
         update["started_at"] = state.started_at or event.timestamp
-    if event.status_class in {
+    if effective_status_class in {
         RuntimeStatusClass.TERMINAL_SUCCESS,
         RuntimeStatusClass.TERMINAL_FAILURE,
         RuntimeStatusClass.TERMINAL_CANCELLED,
     }:
         update["finished_at"] = event.timestamp
-    if event.status_class == RuntimeStatusClass.TERMINAL_SUCCESS and "result" in event.payload:
+    if effective_status_class == RuntimeStatusClass.TERMINAL_SUCCESS and "result" in event.payload:
         result = event.payload["result"]
         update["result"] = result if isinstance(result, dict) else {"value": result}
     state = state.model_copy(update=update)
     projection.processes[event.process_id] = state
+
+
+_ATTEMPT_EVENT_STATE: dict[str, tuple[RuntimeEventStatus, RuntimeStatusClass]] = {
+    RuntimeEventType.PROCESS_ATTEMPT_CREATED: (
+        RuntimeEventStatus.PENDING,
+        RuntimeStatusClass.NOT_STARTED,
+    ),
+    RuntimeEventType.PROCESS_ATTEMPT_STARTED: (
+        RuntimeEventStatus.RUNNING,
+        RuntimeStatusClass.ACTIVE,
+    ),
+    RuntimeEventType.PROCESS_ATTEMPT_COMPLETED: (
+        RuntimeEventStatus.SUCCEEDED,
+        RuntimeStatusClass.TERMINAL_SUCCESS,
+    ),
+    RuntimeEventType.PROCESS_ATTEMPT_FAILED: (
+        RuntimeEventStatus.FAILED,
+        RuntimeStatusClass.TERMINAL_FAILURE,
+    ),
+    RuntimeEventType.PROCESS_ATTEMPT_CANCELLED: (
+        RuntimeEventStatus.CANCELLED,
+        RuntimeStatusClass.TERMINAL_CANCELLED,
+    ),
+}
+
+
+def _apply_attempt_event(projection: RuntimeProjection, event: RuntimeEvent) -> None:
+    if event.event_type not in _ATTEMPT_EVENT_STATE or event.process_id is None or event.attempt_id is None:
+        return
+    default_status, default_status_class = _ATTEMPT_EVENT_STATE[event.event_type]
+    attempt = projection.attempts.get(event.attempt_id)
+    if attempt is None:
+        attempt_ids = projection.process_attempt_ids.setdefault(event.process_id, [])
+        attempt_ids.append(event.attempt_id)
+        attempt = RuntimeProcessAttempt(
+            attempt_id=event.attempt_id,
+            process_id=event.process_id,
+            runtime_id=event.runtime_id,
+            ordinal=int(event.payload.get("ordinal", len(attempt_ids))),
+        )
+    update: dict[str, Any] = {
+        "status": event.status or default_status,
+        "status_class": event.status_class or default_status_class,
+        "checkpoint_id": event.checkpoint_id or attempt.checkpoint_id,
+        "error": event.error or attempt.error,
+    }
+    if event.payload.get("resumed_from_attempt_id") is not None:
+        update["resumed_from_attempt_id"] = str(event.payload["resumed_from_attempt_id"])
+    if event.event_type == RuntimeEventType.PROCESS_ATTEMPT_STARTED:
+        update["started_at"] = attempt.started_at or event.timestamp
+    if default_status_class in {
+        RuntimeStatusClass.TERMINAL_SUCCESS,
+        RuntimeStatusClass.TERMINAL_FAILURE,
+        RuntimeStatusClass.TERMINAL_CANCELLED,
+    }:
+        update["finished_at"] = event.timestamp
+    projection.attempts[event.attempt_id] = attempt.model_copy(update=update)
+
+
+def _apply_checkpoint_event(projection: RuntimeProjection, event: RuntimeEvent) -> None:
+    if event.checkpoint_id is None:
+        return
+    if event.event_type == RuntimeEventType.CHECKPOINT_INVALIDATED:
+        removed = projection.checkpoints.pop(event.checkpoint_id, None)
+        if (
+            removed is not None
+            and projection.latest_checkpoint_by_process.get(removed.process_id) == event.checkpoint_id
+        ):
+            candidates = [
+                checkpoint
+                for checkpoint in projection.checkpoints.values()
+                if checkpoint.process_id == removed.process_id
+            ]
+            if candidates:
+                latest = max(candidates, key=lambda checkpoint: (checkpoint.created_at, checkpoint.checkpoint_id))
+                projection.latest_checkpoint_by_process[removed.process_id] = latest.checkpoint_id
+            else:
+                projection.latest_checkpoint_by_process.pop(removed.process_id, None)
+        return
+    if event.event_type != RuntimeEventType.CHECKPOINT_COMMITTED:
+        return
+    payload = event.payload.get("checkpoint", event.payload)
+    if not isinstance(payload, dict):
+        return
+    try:
+        checkpoint = RuntimeCheckpointRef.model_validate(payload)
+    except ValueError:
+        return
+    if checkpoint.checkpoint_id != event.checkpoint_id:
+        return
+    projection.checkpoints[checkpoint.checkpoint_id] = checkpoint
+    current_id = projection.latest_checkpoint_by_process.get(checkpoint.process_id)
+    current = projection.checkpoints.get(current_id) if current_id is not None else None
+    if current is None or (checkpoint.created_at, checkpoint.checkpoint_id) >= (
+        current.created_at,
+        current.checkpoint_id,
+    ):
+        projection.latest_checkpoint_by_process[checkpoint.process_id] = checkpoint.checkpoint_id
 
 
 def _apply_runtime_event(projection: RuntimeProjection, event: RuntimeEvent) -> None:
