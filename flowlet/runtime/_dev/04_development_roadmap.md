@@ -485,17 +485,20 @@ for both business txn backends to execute on Flowlet rather than beside it.
   initialization interrupted after old state was staged.
 - The reference executor records normal process attempts under an execution
   wave and does not redeclare an unchanged process during continue.
+- External schedulers can use `RuntimeProcessAttemptReporter`; process
+  declaration, ordinal allocation, start, and terminal transitions are backed
+  by transactional durable-store APIs.
 - Concurrent-store, reopen, identity mismatch, continuation, attempt ledger,
   incremental projection, ledger rebuild, exclusive lease, and interrupted
   reconciliation tests pass.
 
 ### Remaining Work
 
-- Durable idempotent commands and live-lease-aware directory reset.
-- Execution-wave orchestration around the implemented DAG continuation
-  selector and cleanup enforcement.
-- MetaMSTools and MassLib4Search txn migration.
-- Fault injection, compatibility, and real-workspace acceptance.
+- Complete execution-wave orchestration around the implemented DAG
+  continuation selector and cleanup enforcement.
+- Finish MetaMSTools finalization/public continuation migration.
+- Complete package rerun APIs, broader fault injection, compatibility, and
+  real-workspace acceptance.
 
 MetaMSTools root lifecycle migration is in progress. Persisted jobs now create
 durable runtime, execution, session, and attempt records; the standard JSONL is
@@ -503,9 +506,11 @@ a compatibility export. Run-level OpenMS continuation now preserves the
 runtime identity and creates a new execution wave; study finalization and real
 workspace acceptance remain open.
 
-MassLib4Search shared annotation runtimes now preserve one durable identity
-across resume jobs and record each job as a continuation execution. Native
-annotation run/study attempt integration remains in progress.
+MassLib4Search shared annotation runtimes preserve one durable identity across
+resume jobs. Annotation run and study processes now use native Flowlet process
+declarations and attempts while package code remains the execution authority.
+Validated nodes produce skip events without new attempts; fault injection
+proves a failed run continues as attempt 2 under the inherited process id.
 
 ## Standard Regression Commands
 

@@ -1033,3 +1033,42 @@ Keep these in business packages:
 - The current package annotation executor still performs run/study execution;
   persisting a Flowlet recovery plan alone is not considered native process
   migration. That is the next MassLib4Search task.
+
+### Phase 11 Continued: Atomic Attempts And Native Mass Annotation Processes
+
+- `RuntimeDurableStore.declare_process()` now persists a stable declaration
+  and its creation event in one transaction. Changed declarations in the same
+  lineage are rejected.
+- `begin_process_attempt()` atomically allocates the next per-process ordinal
+  and appends created/started events. `finish_process_attempt()` permits one
+  terminal transition. `RuntimeProcessAttemptReporter` exposes these APIs to
+  package schedulers without requiring Flowlet to own business execution.
+- The durable attempt materializer now consumes only
+  `process.attempt.*` events. Previously, a terminal
+  `process.status.changed` carrying an attempt id could prematurely terminate
+  the ledger row even though the framework projection handled this correctly.
+- `RuntimeBackendExecutor.run_process()` uses the same reporter path when its
+  event store is durable, removing its non-atomic read-then-increment ordinal
+  path.
+- Durable compatibility export now scans the canonical journal for sparse
+  missing sequences and atomically rewrites the JSONL in canonical order.
+  Previously, a later manager event in JSONL could cause earlier durable-only
+  attempt events to be skipped permanently.
+- MassLib4Search uses one package-owned process-spec factory for both execution
+  and recovery. Annotation run/study declarations are now canonical Flowlet
+  declarations, not manifest-only recovery descriptions.
+- Serial and thread workers report run lifecycle directly. Ray workers send
+  lifecycle messages through the existing queue to the driver authority; no
+  Ray worker opens the SQLite store.
+- Continue plans are derived from the canonical durable projection plus
+  package artifact/checkpoint assessments. Valid run/study nodes append skip
+  events and create no attempt. Failed runs inherit `process_id`, create the
+  next ordinal, and link `resumed_from_attempt_id` to the prior durable
+  attempt.
+- Flowlet Ruff and all 82 runtime tests pass. MassLib4Search backend, recovery,
+  and annotation workflow Ruff and 48 tests pass, including Ray. A focused
+  fault-injection regression proves failed attempt 1 followed by successful
+  continuation attempt 2 in the same runtime lineage.
+- Remaining work is MetaMSTools study finalization/public continuation,
+  explicit package rerun APIs, broader crash injection, and the final liver
+  workspace acceptance/cleanup.

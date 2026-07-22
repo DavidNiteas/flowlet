@@ -198,6 +198,11 @@ artifacts itself.
 - `RuntimeDurableStore` identity verification, transactional event allocation,
   concurrent local writers, execution transitions, process specs, attempt
   materialization, and projection cursor storage.
+- Atomic process declaration and attempt lifecycle APIs. Attempt ordinals are
+  allocated under `BEGIN IMMEDIATE`, and terminal attempts reject a second
+  terminal transition.
+- `RuntimeProcessAttemptReporter` for package schedulers that own execution but
+  delegate stable process/attempt identity and ledger writes to Flowlet.
 - `RuntimeDirectoryManager` guarded create/continue/rerun operations. Reset
   keeps its lock and durable marker under `.control`, stages old contents, and
   completes an interrupted initialization on the next open.
@@ -217,16 +222,15 @@ sequences `0..39`, a reopened store preserves identity and ledger state,
 continue creates execution ordinal 2 under the same runtime, identity mismatch
 is rejected, and projection reads can begin after the persisted cursor. Lease
 tests prove one winner among four concurrent acquirers and deterministic stale
-session reconciliation. Flowlet runtime tests pass at 72 tests.
+session reconciliation. Concurrent external reporters also allocate distinct
+attempt ordinals. Flowlet runtime tests pass at 82 tests.
 
 ## Remaining Phases
 
-1. Refactor the reference executor around execution waves and the durable
-   store.
-2. Finish the started MetaMSTools migration by connecting OpenMS run-level
-   continuation to the durable root execution lineage.
-3. Migrate MassLib4Search annotation runtime, run processes, and study process.
-4. Switch package standard readers to the durable store, retain declared
+1. Finish execution-wave orchestration and fault injection around recovery
+   dispatch.
+2. Finish MetaMSTools study finalization and public continuation entrypoints.
+3. Switch package standard readers to the durable store, retain declared
    legacy adapters, and run crash-injection plus real-workspace acceptance.
 
 MetaMSTools migration is now underway: new persisted jobs use the durable
@@ -237,12 +241,14 @@ under the same runtime and use package artifact assessments plus the Flowlet
 selector/executor to skip valid OpenMS runs and execute missing runs. Full
 study finalization and real-workspace acceptance remain open.
 
-MassLib4Search root migration is also underway. A shared annotation backend
-runtime now has one durable `runtime_id`; each initial/resume job becomes an
-execution wave and retains its own root process/attempt identity. Recovery
-plans now preserve source/target runtime identity. Annotation run and study
-execution are still package-owned without native Flowlet attempt dispatch, so
-that process-level migration remains open.
+MassLib4Search annotation execution now declares its stable run/study DAG in
+Flowlet and reports package-owned serial, thread, and Ray execution through
+`RuntimeProcessAttemptReporter`. Ray workers send lifecycle messages back to
+the driver; they never write SQLite. Initial runs create run/study attempts,
+valid continuation nodes append skip events without new attempts, and failed
+runs continue under the same process id with the next attempt ordinal. The
+package still owns FSM work, artifact validation, aggregation, and output
+cleanup. Public rerun and final real-workspace acceptance remain open.
 
 ## Acceptance
 

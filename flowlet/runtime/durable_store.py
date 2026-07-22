@@ -42,6 +42,10 @@ class RuntimeIdentityMismatchError(ValueError):
     """Raised when a writer attempts to append into another runtime lineage."""
 
 
+class RuntimeAttemptStateError(ValueError):
+    """Raised when an attempt lifecycle transition is invalid."""
+
+
 class RuntimeDurableStore:
     """Transactional local event journal with a rebuildable execution ledger.
 
@@ -303,6 +307,233 @@ class RuntimeDurableStore:
         with self._changed:
             self._changed.notify_all()
         return stored
+
+    def declare_process(self, spec: RuntimeProcessSpec, *, timestamp: float) -> bool:
+        """Persist one stable process declaration and emit its creation exactly once."""
+        identity = self._require_identity()
+        process_id = spec.resolved_process_id()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT spec_json FROM runtime_process_specs WHERE process_id = ?",
+                (process_id,),
+            ).fetchone()
+            if row is not None:
+                existing = RuntimeProcessSpec.model_validate_json(row[0])
+                connection.rollback()
+                if existing != spec:
+                    raise ValueError(f"Process spec changed within runtime lineage: {process_id!r}")
+                return False
+            connection.execute(
+                "INSERT INTO runtime_process_specs(process_id, spec_json) VALUES (?, ?)",
+                (process_id, spec.model_dump_json()),
+            )
+            self._append_event_tx(
+                connection,
+                RuntimeEvent(
+                    event_id=-1,
+                    runtime_id=identity.runtime_id,
+                    process_id=process_id,
+                    parent_process_id=spec.parent_process_id,
+                    event_type=RuntimeEventType.PROCESS_CREATED,
+                    timestamp=timestamp,
+                    status=RuntimeEventStatus.PENDING,
+                    status_class=RuntimeStatusClass.NOT_STARTED,
+                    payload={
+                        "process_type": spec.process_type,
+                        "display_name": spec.display_name,
+                    },
+                    metadata=spec.metadata,
+                ),
+            )
+            connection.commit()
+        self._notify_changed()
+        return True
+
+    def begin_process_attempt(
+        self,
+        process_id: str,
+        *,
+        execution_id: str,
+        timestamp: float,
+        operation: RuntimeProcessOperation = RuntimeProcessOperation.START,
+        backend_session_id: str | None = None,
+        resumed_from_attempt_id: str | None = None,
+        checkpoint_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeProcessAttempt:
+        """Atomically allocate and start the next attempt for a declared process."""
+        identity = self._require_identity()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            spec_row = connection.execute(
+                "SELECT spec_json FROM runtime_process_specs WHERE process_id = ?",
+                (process_id,),
+            ).fetchone()
+            if spec_row is None:
+                connection.rollback()
+                raise KeyError(f"Unknown process_id: {process_id!r}")
+            execution = self._load_execution_tx(connection, execution_id)
+            if execution is None:
+                connection.rollback()
+                raise KeyError(f"Unknown execution_id: {execution_id!r}")
+            if execution.status not in {
+                RuntimeExecutionStatus.PENDING,
+                RuntimeExecutionStatus.RUNNING,
+            }:
+                connection.rollback()
+                raise RuntimeAttemptStateError(
+                    f"Cannot start an attempt in terminal execution {execution_id!r}"
+                )
+            if (
+                execution.backend_session_id is not None
+                and execution.backend_session_id != backend_session_id
+            ):
+                connection.rollback()
+                raise RuntimeAttemptStateError(
+                    f"Attempt backend session does not own execution {execution_id!r}"
+                )
+            spec = RuntimeProcessSpec.model_validate_json(spec_row[0])
+            ordinal = int(
+                connection.execute(
+                    "SELECT COALESCE(MAX(ordinal), 0) + 1 FROM runtime_attempts WHERE process_id = ?",
+                    (process_id,),
+                ).fetchone()[0]
+            )
+            attempt_id = f"{process_id}:attempt:{ordinal}"
+            payload: dict[str, Any] = {
+                "ordinal": ordinal,
+                "operation": operation.value,
+                "execution_key": spec.execution_key,
+                "input_fingerprint": spec.input_fingerprint,
+                "implementation_version": spec.implementation_version,
+                "backend_session_id": backend_session_id,
+            }
+            if resumed_from_attempt_id is not None:
+                payload["resumed_from_attempt_id"] = resumed_from_attempt_id
+            for event_type, status, status_class in (
+                (
+                    RuntimeEventType.PROCESS_ATTEMPT_CREATED,
+                    RuntimeEventStatus.PENDING,
+                    RuntimeStatusClass.NOT_STARTED,
+                ),
+                (
+                    RuntimeEventType.PROCESS_ATTEMPT_STARTED,
+                    RuntimeEventStatus.RUNNING,
+                    RuntimeStatusClass.ACTIVE,
+                ),
+            ):
+                self._append_event_tx(
+                    connection,
+                    RuntimeEvent(
+                        event_id=-1,
+                        runtime_id=identity.runtime_id,
+                        execution_id=execution_id,
+                        process_id=process_id,
+                        parent_process_id=spec.parent_process_id,
+                        attempt_id=attempt_id,
+                        checkpoint_id=checkpoint_id,
+                        event_type=event_type,
+                        timestamp=timestamp,
+                        status=status,
+                        status_class=status_class,
+                        payload=payload,
+                        metadata=metadata or {},
+                    ),
+                )
+            attempt = self._load_attempt_tx(connection, attempt_id)
+            connection.commit()
+        self._notify_changed()
+        if attempt is None:  # pragma: no cover - both events materialize it
+            raise RuntimeError(f"Attempt was not materialized: {attempt_id!r}")
+        return attempt
+
+    def finish_process_attempt(
+        self,
+        attempt_id: str,
+        *,
+        event_type: RuntimeEventType,
+        timestamp: float,
+        error: RuntimeErrorInfo | None = None,
+        result: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeProcessAttempt:
+        """Atomically append one terminal event for an active process attempt."""
+        terminal = {
+            RuntimeEventType.PROCESS_ATTEMPT_COMPLETED: (
+                RuntimeEventStatus.SUCCEEDED,
+                RuntimeStatusClass.TERMINAL_SUCCESS,
+            ),
+            RuntimeEventType.PROCESS_ATTEMPT_FAILED: (
+                RuntimeEventStatus.FAILED,
+                RuntimeStatusClass.TERMINAL_FAILURE,
+            ),
+            RuntimeEventType.PROCESS_ATTEMPT_CANCELLED: (
+                RuntimeEventStatus.CANCELLED,
+                RuntimeStatusClass.TERMINAL_CANCELLED,
+            ),
+            RuntimeEventType.PROCESS_ATTEMPT_INTERRUPTED: (
+                RuntimeEventStatus.INTERRUPTED,
+                RuntimeStatusClass.TERMINAL_FAILURE,
+            ),
+        }
+        if event_type not in terminal:
+            raise ValueError(f"Not a terminal process-attempt event: {event_type!r}")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            attempt = self._load_attempt_tx(connection, attempt_id)
+            if attempt is None:
+                connection.rollback()
+                raise KeyError(f"Unknown attempt_id: {attempt_id!r}")
+            if attempt.status_class not in {
+                RuntimeStatusClass.NOT_STARTED,
+                RuntimeStatusClass.ACTIVE,
+            }:
+                connection.rollback()
+                raise RuntimeAttemptStateError(
+                    f"Attempt {attempt_id!r} is already terminal with status {attempt.status!r}"
+                )
+            spec_row = connection.execute(
+                "SELECT spec_json FROM runtime_process_specs WHERE process_id = ?",
+                (attempt.process_id,),
+            ).fetchone()
+            spec = RuntimeProcessSpec.model_validate_json(spec_row[0]) if spec_row is not None else None
+            status, status_class = terminal[event_type]
+            payload = {
+                "ordinal": attempt.ordinal,
+                "operation": attempt.operation.value if attempt.operation is not None else None,
+                "execution_key": attempt.execution_key,
+                "input_fingerprint": attempt.input_fingerprint,
+                "implementation_version": attempt.implementation_version,
+                "backend_session_id": attempt.backend_session_id,
+            }
+            if result is not None:
+                payload["result"] = result
+            self._append_event_tx(
+                connection,
+                RuntimeEvent(
+                    event_id=-1,
+                    runtime_id=attempt.runtime_id,
+                    execution_id=attempt.execution_id,
+                    process_id=attempt.process_id,
+                    parent_process_id=spec.parent_process_id if spec is not None else None,
+                    attempt_id=attempt.attempt_id,
+                    checkpoint_id=attempt.checkpoint_id,
+                    event_type=event_type,
+                    timestamp=timestamp,
+                    status=status,
+                    status_class=status_class,
+                    error=error,
+                    payload=payload,
+                    metadata=metadata or {},
+                ),
+            )
+            finished = self._load_attempt_tx(connection, attempt_id)
+            connection.commit()
+        self._notify_changed()
+        if finished is None:  # pragma: no cover - attempt was loaded above
+            raise RuntimeError(f"Attempt disappeared during transition: {attempt_id!r}")
+        return finished
 
     def reserve_command(
         self,
@@ -801,7 +1032,19 @@ class RuntimeDurableStore:
         return stored
 
     def _apply_attempt_event_tx(self, connection: sqlite3.Connection, event: RuntimeEvent) -> None:
-        if event.attempt_id is None or event.process_id is None:
+        if (
+            event.attempt_id is None
+            or event.process_id is None
+            or event.event_type
+            not in {
+                RuntimeEventType.PROCESS_ATTEMPT_CREATED,
+                RuntimeEventType.PROCESS_ATTEMPT_STARTED,
+                RuntimeEventType.PROCESS_ATTEMPT_COMPLETED,
+                RuntimeEventType.PROCESS_ATTEMPT_FAILED,
+                RuntimeEventType.PROCESS_ATTEMPT_CANCELLED,
+                RuntimeEventType.PROCESS_ATTEMPT_INTERRUPTED,
+            }
+        ):
             return
         attempt = self._load_attempt_tx(connection, event.attempt_id)
         if attempt is None:

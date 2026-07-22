@@ -25,6 +25,7 @@ from .recovery import (
     RuntimeRecoveryPlan,
     RuntimeRecoveryStep,
 )
+from .reporter import RuntimeProcessAttemptReporter
 from .schema import RuntimeErrorInfo, RuntimeEvent, RuntimeEventStatus, RuntimeEventType, RuntimeStatusClass
 from .store import RuntimeStore
 
@@ -62,6 +63,13 @@ class RuntimeBackendExecutor:
     def register(self, process: RuntimeProcess) -> RuntimeProcess:
         """Register a process implementation."""
         process_id = process.spec.resolved_process_id()
+        durable_store = self._durable_event_store()
+        if durable_store is not None:
+            durable_store.declare_process(process.spec, timestamp=time.time())
+            self._processes[process_id] = process
+            self._write_process_specs()
+            self.write_projection()
+            return process
         existing_specs = {spec.resolved_process_id(): spec for spec in self._load_process_specs()}
         existing = existing_specs.get(process_id)
         if existing is not None and existing != process.spec:
@@ -80,6 +88,30 @@ class RuntimeBackendExecutor:
     def run_process(self, process_id: str) -> Any:
         """Run one registered process and persist the current projection."""
         process = self._get_process(process_id)
+        durable_store = self._durable_event_store()
+        if durable_store is not None and self.execution_id is not None:
+            reporter = RuntimeProcessAttemptReporter(
+                durable_store,
+                execution_id=self.execution_id,
+                backend_session_id=self.backend_session_id,
+            )
+            attempt = reporter.start(process_id)
+            context = self._context_for(process, attempt_id=attempt.attempt_id)
+            self.sync_manager_events()
+            try:
+                result = RuntimeProcessRunner(context).run(process)
+            except Exception as exc:
+                reporter.fail(attempt.attempt_id, exc)
+                raise
+            else:
+                reporter.complete(
+                    attempt.attempt_id,
+                    result=result if isinstance(result, dict) else {"value": result},
+                )
+                return result
+            finally:
+                self.sync_manager_events()
+                self.write_projection()
         ordinal = len(self.projection().process_attempt_ids.get(process_id, [])) + 1
         attempt_id = f"{process_id}:attempt:{ordinal}"
         context = self._context_for(process, attempt_id=attempt_id)

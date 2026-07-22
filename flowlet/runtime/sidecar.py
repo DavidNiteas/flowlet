@@ -174,15 +174,13 @@ class RuntimeEventSidecarWriter:
         existing_sequences = {
             event.sequence for event in compatibility.list() if event.sequence is not None
         }
-        effective_since = since
-        if effective_since is None and existing_sequences:
-            effective_since = max(existing_sequences)
         exported: list[RuntimeEvent] = []
-        for event in self.durable_store.list(since=effective_since):
+        for event in self.durable_store.list(since=since):
             if event.sequence in existing_sequences:
                 continue
-            compatibility.append(event)
             exported.append(event)
+        if exported:
+            compatibility.replace(self.durable_store.list())
         return exported
 
 

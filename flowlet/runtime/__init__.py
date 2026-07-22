@@ -28,7 +28,7 @@ from .command import (
     RuntimeCommandStatus,
 )
 from .directory import RuntimeDirectoryManager
-from .durable_store import RuntimeDurableStore, RuntimeIdentityMismatchError
+from .durable_store import RuntimeAttemptStateError, RuntimeDurableStore, RuntimeIdentityMismatchError
 from .event_store import RuntimeEventCursor, RuntimeEventJsonlStore, RuntimeEventStore
 from .events import EventBuffer, sse_encode_event
 from .executor import RuntimeBackendExecutor
@@ -78,6 +78,7 @@ from .recovery import (
     RuntimeRecoveryStep,
     build_runtime_process_graph,
 )
+from .reporter import RuntimeProcessAttemptReporter
 from .schema import (
     RuntimeErrorInfo,
     RuntimeEvent,
@@ -130,6 +131,7 @@ __all__ = [
     "RuntimeEventType",
     "RuntimeEventSidecarWriter",
     "RuntimeDurableStore",
+    "RuntimeAttemptStateError",
     "RuntimeDirectoryManager",
     "RuntimeBackendExecutor",
     "RuntimeBackendSession",
@@ -159,6 +161,7 @@ __all__ = [
     "RuntimeProcessSpec",
     "RuntimeProcessState",
     "RuntimeProcessAttempt",
+    "RuntimeProcessAttemptReporter",
     "RuntimeProcessGraph",
     "RuntimeProjection",
     "RuntimeProjectionPolicy",

@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from flowlet.runtime import (
     EventBuffer,
+    RuntimeAttemptStateError,
     RuntimeBackendExecutor,
     RuntimeBackendSessionStatus,
     RuntimeCheckpointMode,
@@ -41,6 +42,7 @@ from flowlet.runtime import (
     RuntimeManagerEventBridge,
     RuntimeObservation,
     RuntimeProcessAttempt,
+    RuntimeProcessAttemptReporter,
     RuntimeProcessBase,
     RuntimeProcessCapabilities,
     RuntimeProcessContext,
@@ -1808,6 +1810,147 @@ def test_runtime_backend_executor_uses_durable_execution_and_attempt_identity(tm
     assert store.load_projection() is not None
 
 
+def test_process_attempt_reporter_records_external_execution_lifecycle(tmp_path):
+    store = RuntimeDurableStore.create(
+        tmp_path / "runtime.db",
+        RuntimeIdentity(runtime_id="runtime-1", created_at=1.0),
+    )
+    store.begin_execution(
+        execution_id="execution-1",
+        kind=RuntimeExecutionKind.INITIAL,
+        created_at=2.0,
+    )
+    reporter = RuntimeProcessAttemptReporter(
+        store,
+        execution_id="execution-1",
+        backend_session_id="session-1",
+    )
+    spec = RuntimeProcessSpec(
+        process_id="external-process",
+        process_type="example.external",
+        execution_key="stable-external-process",
+    )
+
+    assert reporter.declare(spec, timestamp=3.0)
+    assert not reporter.declare(spec, timestamp=4.0)
+    first = reporter.start("external-process", timestamp=5.0)
+    completed = reporter.complete(first.attempt_id, result={"count": 2}, timestamp=6.0)
+    skipped = reporter.skip("external-process", reason="output remains valid", timestamp=6.5)
+    second = reporter.start(
+        "external-process",
+        operation=RuntimeProcessOperation.RETRY,
+        resumed_from_attempt_id=first.attempt_id,
+        timestamp=7.0,
+    )
+    failed = reporter.fail(second.attempt_id, RuntimeError("failed"), timestamp=8.0)
+
+    assert first.attempt_id == "external-process:attempt:1"
+    assert completed.status == RuntimeEventStatus.SUCCEEDED
+    assert skipped.status == RuntimeEventStatus.SKIPPED
+    assert second.attempt_id == "external-process:attempt:2"
+    assert second.resumed_from_attempt_id == first.attempt_id
+    assert failed.status == RuntimeEventStatus.FAILED
+    assert failed.error is not None and failed.error.type == "RuntimeError"
+    assert store.ledger().process_attempt_ids["external-process"] == [
+        "external-process:attempt:1",
+        "external-process:attempt:2",
+    ]
+    with pytest.raises(RuntimeAttemptStateError, match="already terminal"):
+        reporter.complete(first.attempt_id, timestamp=9.0)
+
+
+def test_durable_attempt_materialization_ignores_process_status_events(tmp_path):
+    store = RuntimeDurableStore.create(
+        tmp_path / "runtime.db",
+        RuntimeIdentity(runtime_id="runtime-1", created_at=1.0),
+    )
+    store.begin_execution(
+        execution_id="execution-1",
+        kind=RuntimeExecutionKind.INITIAL,
+        created_at=2.0,
+    )
+    reporter = RuntimeProcessAttemptReporter(store, execution_id="execution-1")
+    reporter.declare(
+        RuntimeProcessSpec(process_id="process-1", process_type="example.process"),
+        timestamp=3.0,
+    )
+    attempt = reporter.start("process-1", timestamp=4.0)
+
+    store.append(
+        RuntimeEvent(
+            event_id=-1,
+            runtime_id="runtime-1",
+            execution_id="execution-1",
+            process_id="process-1",
+            attempt_id=attempt.attempt_id,
+            event_type=RuntimeEventType.PROCESS_STATUS_CHANGED,
+            timestamp=5.0,
+            status=RuntimeEventStatus.SUCCEEDED,
+            status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+        )
+    )
+
+    assert store.ledger().attempts[attempt.attempt_id].status == RuntimeEventStatus.RUNNING
+    assert reporter.complete(attempt.attempt_id, timestamp=6.0).status == (
+        RuntimeEventStatus.SUCCEEDED
+    )
+
+
+def test_process_attempt_reporter_allocates_ordinals_across_store_instances(tmp_path):
+    database_path = tmp_path / "runtime.db"
+    store = RuntimeDurableStore.create(
+        database_path,
+        RuntimeIdentity(runtime_id="runtime-1", created_at=1.0),
+    )
+    store.begin_execution(
+        execution_id="execution-1",
+        kind=RuntimeExecutionKind.INITIAL,
+        created_at=2.0,
+    )
+    store.declare_process(
+        RuntimeProcessSpec(process_id="process-1", process_type="example.concurrent"),
+        timestamp=3.0,
+    )
+
+    def start(index: int) -> str:
+        reporter = RuntimeProcessAttemptReporter(
+            RuntimeDurableStore(database_path),
+            execution_id="execution-1",
+        )
+        return reporter.start("process-1", timestamp=4.0 + index).attempt_id
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        attempt_ids = list(pool.map(start, range(4)))
+
+    assert sorted(attempt_ids) == [f"process-1:attempt:{ordinal}" for ordinal in range(1, 5)]
+
+
+def test_process_attempt_reporter_rejects_terminal_execution(tmp_path):
+    store = RuntimeDurableStore.create(
+        tmp_path / "runtime.db",
+        RuntimeIdentity(runtime_id="runtime-1", created_at=1.0),
+    )
+    store.begin_execution(
+        execution_id="execution-1",
+        kind=RuntimeExecutionKind.INITIAL,
+        created_at=2.0,
+    )
+    reporter = RuntimeProcessAttemptReporter(store, execution_id="execution-1")
+    reporter.declare(
+        RuntimeProcessSpec(process_id="process-1", process_type="example.process"),
+        timestamp=3.0,
+    )
+    store.transition_execution(
+        "execution-1", RuntimeExecutionStatus.RUNNING, timestamp=3.5
+    )
+    store.transition_execution(
+        "execution-1", RuntimeExecutionStatus.SUCCEEDED, timestamp=4.0
+    )
+
+    with pytest.raises(RuntimeAttemptStateError, match="terminal execution"):
+        reporter.start("process-1", timestamp=5.0)
+
+
 def test_runtime_framework_reducer_prefers_durable_sequence_over_worker_clock():
     events = [
         RuntimeEvent(
@@ -2428,10 +2571,53 @@ def test_runtime_event_sidecar_writer_uses_durable_store_as_canonical_source(tmp
         "execution1", RuntimeExecutionStatus.RUNNING, timestamp=4.0
     )
     assert [event.event_type for event in writer.export_durable_events()] == [
+        RuntimeEventType.EXECUTION_CREATED,
         RuntimeEventType.EXECUTION_STARTED
     ]
     compatibility.load()
-    assert [event.event_id for event in compatibility.list()] == [1, 2]
+    assert [event.event_id for event in compatibility.list()] == [0, 1, 2]
+
+
+def test_runtime_event_sidecar_export_fills_sparse_earlier_sequences(tmp_path):
+    durable = RuntimeDurableStore.create(
+        tmp_path / "runtime" / "runtime.db",
+        RuntimeIdentity(runtime_id="runtime-1", created_at=1.0),
+    )
+    writer = RuntimeEventSidecarWriter(
+        tmp_path,
+        runtime_id="runtime-1",
+        durable_store=durable,
+    )
+    first = durable.append(
+        RuntimeEvent(
+            event_id=-1,
+            runtime_id="runtime-1",
+            event_type=RuntimeEventType.LOG_EMITTED,
+            timestamp=2.0,
+            message="durable only",
+        )
+    )
+    second = durable.append(
+        RuntimeEvent(
+            event_id=-1,
+            runtime_id="runtime-1",
+            event_type=RuntimeEventType.LOG_EMITTED,
+            timestamp=3.0,
+            message="already exported",
+        )
+    )
+    RuntimeStore(tmp_path).append_runtime_event(second)
+
+    exported = writer.export_durable_events()
+
+    assert exported == [first]
+    compatibility = RuntimeStore(tmp_path).runtime_event_store()
+    compatibility.load()
+    assert {event.sequence for event in compatibility.list()} == {
+        first.sequence,
+        second.sequence,
+    }
+    assert [event.sequence for event in compatibility.list()] == [0, 1]
 
 
 def test_txn_event_payload_adapter_round_trips_legacy_shape():

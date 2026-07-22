@@ -104,6 +104,18 @@ class RuntimeEventJsonlStore:
             self._events = events
             self._changed.notify_all()
 
+    def replace(self, events: list[RuntimeEvent]) -> None:
+        """Replace a compatibility export with one canonical ordered snapshot."""
+        with self._changed:
+            self._events = list(events)
+            if self.events_path is not None:
+                temporary = self.events_path.with_name(f".{self.events_path.name}.tmp")
+                with temporary.open("w", encoding="utf-8") as fh:
+                    for event in self._events:
+                        fh.write(event.model_dump_json() + "\n")
+                temporary.replace(self.events_path)
+            self._changed.notify_all()
+
 
 def _numeric_event_id(event: RuntimeEvent) -> int:
     if isinstance(event.event_id, int):
