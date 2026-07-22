@@ -68,3 +68,11 @@ Wave 1 requirements are non-code decisions:
 
 Until these decisions exist, Wave 2 implementation may add adapters but must
 not disable legacy writes or change `/events` behavior.
+
+## Wave 2 Baseline Evidence
+
+Both package CLI adapters can now render root lifecycle aggregates from a
+standard projection plus `status.json` alone. This is covered by package CLI
+tests and does not use `events.jsonl`, `snapshot.json`, or
+`monitor_snapshot.json`. The retained business record is still required for
+identity, paths, planned counts, and package monitor schemas.

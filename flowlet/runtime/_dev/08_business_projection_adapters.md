@@ -107,6 +107,21 @@ Required mapping:
    directories currently lack projections and must continue to use fallback
    behavior.
 
+## Wave 2 Baseline
+
+The package-owned CLI adapters now prove the minimum Wave 2 reader condition:
+a standard `RuntimeProjection` plus a valid `status.json` business record can
+construct a terminal `JobMonitorSnapshot` without `snapshot.json`,
+`monitor_snapshot.json`, or `events.jsonl`.
+
+- MassLib4Search covers this status-record-only path in its CLI regression.
+- MetaMSTools now covers the same path in its CLI regression.
+
+This is deliberately limited to root lifecycle aggregates. It does not claim
+that a standard-only directory can reconstruct business run/stage/FSM detail,
+nor does it migrate live GUI/TUI monitor rendering. Those remain package-owned
+Wave 2 follow-up work under the boundaries above.
+
 ## Acceptance
 
 - Flowlet has no imports from MetaMSTools or MassLib4Search.

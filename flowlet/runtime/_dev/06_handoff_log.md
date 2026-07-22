@@ -93,6 +93,14 @@ in-repository legacy readers and writers now have a named package owner and
 migration target. External consumers and endpoint-version approval remain
 explicit product-owner decisions; no compatibility path was changed.
 
+### Phase 9 Wave 2 Reader Baseline
+
+Added a MetaMSTools CLI regression for a runtime containing only standard
+projection files and `status.json`. Both business packages now prove that their
+package-owned adapter can construct terminal root lifecycle monitor aggregates
+without legacy events or snapshots. This is not a live UI migration and does
+not reconstruct business run/stage/FSM hierarchy from Flowlet data.
+
 ### Completed
 
 - Added initial design document set under `flowlet/flowlet/runtime/_dev`.
