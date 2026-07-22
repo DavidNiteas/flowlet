@@ -54,12 +54,15 @@ Added:
 - `flowlet.runtime.adapters.LEGACY_TXN_EVENT_TYPE_MAP`
 - `txn_event_payload_to_runtime_event(...)`
 - `runtime_event_to_txn_event_payload(...)`
+- `manager_record_to_runtime_event(...)`
 
 Added tests for:
 
 - JSONL append/load/list/wait behavior.
 - TxnEvent-like dictionary to RuntimeEvent conversion.
 - RuntimeEvent back to legacy dictionary conversion.
+- Current-style MetaMSTools and MassLib4Search legacy event payload shapes.
+- Flowlet manager record conversion for progress, signal, log, stream, and telemetry.
 
 Validation commands:
 
@@ -73,7 +76,7 @@ Result:
 
 ```text
 All checks passed.
-8 passed.
+11 passed.
 ```
 
 ### Open Work
@@ -84,11 +87,10 @@ Phase 2 should start only after that review.
 
 Recommended next steps:
 
-1. Add a small compatibility fixture set from current MetaMSTools and MassLib4Search `TxnEvent` payloads.
-2. Decide whether standard events should initially use a sidecar file such as `runtime/events.runtime.jsonl`.
-3. Add manager-to-`RuntimeEvent` conversion for progress, signal, log, stream, and telemetry records.
-4. Add an opt-in sidecar writer in current business backends without changing their legacy `events.jsonl`.
-5. Keep CLI/TUI readers on existing projections until event-derived projections are implemented.
+1. Decide whether standard events should initially use a sidecar file such as `runtime/events.runtime.jsonl`.
+2. Add an opt-in sidecar writer in current business backends without changing their legacy `events.jsonl`.
+3. Add fixtures from actual runtime files once fixture ownership is decided.
+4. Keep CLI/TUI readers on existing projections until event-derived projections are implemented.
 
 ### Boundary Reminder
 

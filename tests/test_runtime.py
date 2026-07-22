@@ -16,6 +16,7 @@ from flowlet.runtime import (
     RuntimeStatusClass,
     RuntimeStore,
     list_runtime_artifacts,
+    manager_record_to_runtime_event,
     runtime_event_payload,
     runtime_event_to_txn_event_payload,
     runtime_info_payload,
@@ -167,6 +168,109 @@ def test_txn_event_payload_adapter_round_trips_legacy_shape():
     assert event.status_class == RuntimeStatusClass.TERMINAL_SUCCESS
     assert event.metadata["legacy_event_type"] == "job_state"
     assert restored == legacy
+
+
+def test_txn_event_payload_adapter_accepts_current_backend_event_shapes():
+    samples = [
+        {
+            "event_id": 4,
+            "job_id": "metams-job",
+            "timestamp": 126.0,
+            "event_type": "progress",
+            "payload": {
+                "task_id": "run:Liver-1:feature_find",
+                "description": "Liver-1 feature_find",
+                "current": 1,
+                "total": 1,
+                "status": "completed",
+                "metadata": {"stage": "feature_find"},
+            },
+        },
+        {
+            "event_id": 5,
+            "job_id": "masslib-job",
+            "timestamp": 127.0,
+            "event_type": "artifact",
+            "payload": {
+                "path": "annotation_run_manifest.json",
+                "parent_id": "annotation_study",
+                "status": "completed",
+            },
+        },
+    ]
+
+    events = [txn_event_payload_to_runtime_event(sample, runtime_id="runtime1") for sample in samples]
+
+    assert [event.event_type for event in events] == ["process.progressed", "artifact.produced"]
+    assert all(event.runtime_id == "runtime1" for event in events)
+    assert all(event.process_id in {"metams-job", "masslib-job"} for event in events)
+    assert events[0].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+
+
+def test_manager_record_to_runtime_event_maps_progress_and_signal():
+    progress = manager_record_to_runtime_event(
+        {
+            "task_id": "run:Liver-1:feature_find",
+            "description": "Liver-1 feature_find",
+            "current": 3,
+            "total": 4,
+            "status": "running",
+            "metadata": {"stage": "feature_find"},
+        },
+        record_type="progress",
+        event_id=10,
+        runtime_id="runtime1",
+        process_id="process1",
+    )
+    signal = manager_record_to_runtime_event(
+        {
+            "name": "run:Liver-1:stage:feature_find",
+            "status": "failed",
+            "error": "bad peak",
+            "version": 2,
+            "timestamp": 130.0,
+        },
+        record_type="signal",
+        event_id=11,
+        runtime_id="runtime1",
+    )
+
+    assert progress.event_type == "process.progressed"
+    assert progress.subject_id == "run:Liver-1:feature_find"
+    assert progress.progress is not None
+    assert progress.progress.percent == 75.0
+    assert signal.event_type == "signal.changed"
+    assert signal.status_class == RuntimeStatusClass.TERMINAL_FAILURE
+    assert signal.error is not None
+    assert signal.error.message == "bad peak"
+
+
+def test_manager_record_to_runtime_event_maps_log_stream_and_telemetry():
+    log_event = manager_record_to_runtime_event(
+        {"timestamp": 1.0, "task_id": "task1", "level": "INFO", "message": "started"},
+        record_type="log",
+        event_id=20,
+        runtime_id="runtime1",
+    )
+    stream_event = manager_record_to_runtime_event(
+        {"timestamp": 2.0, "stream": "stdout", "text": "hello", "source": "worker"},
+        record_type="stream",
+        event_id=21,
+        runtime_id="runtime1",
+    )
+    telemetry_event = manager_record_to_runtime_event(
+        {"timestamp": 3.0, "event_type": "metric", "name": "peak_count", "value": 42},
+        record_type="telemetry",
+        event_id=22,
+        runtime_id="runtime1",
+    )
+
+    assert log_event.event_type == "log.emitted"
+    assert log_event.message == "started"
+    assert stream_event.event_type == "stream.chunk"
+    assert stream_event.message == "hello"
+    assert telemetry_event.event_type == "metric.sampled"
+    assert telemetry_event.subject_id == "peak_count"
 
 
 @dataclass

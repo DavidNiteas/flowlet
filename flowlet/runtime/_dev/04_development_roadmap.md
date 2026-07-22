@@ -91,8 +91,17 @@ Make standard events storable and compatible with current `TxnEvent`.
 - `txn_event_payload_to_runtime_event(...)` converts current TxnEvent-like dictionaries to `RuntimeEvent` without importing business packages.
 - `runtime_event_to_txn_event_payload(...)` converts a `RuntimeEvent` back to the legacy dictionary shape for compatibility.
 - The legacy event adapter preserves `legacy_event_type` in `RuntimeEvent.metadata`.
-- Manager-to-`RuntimeEvent` conversion and business backend integration are not implemented yet.
+- `manager_record_to_runtime_event(...)` converts current Flowlet progress, signal, log, stream, and telemetry manager records to standard events.
+- Tests include current-style MetaMSTools and MassLib4Search legacy event payload shapes.
+- Business backend integration is not implemented yet.
 - The sidecar filename decision is still open. Tests currently use `events.runtime.jsonl` as a candidate name.
+
+### Remaining Phase 2 Work
+
+- Decide and document the initial standard event sidecar path.
+- Add opt-in sidecar writing to current business backends.
+- Keep legacy `events.jsonl` unchanged until readers migrate.
+- Add fixtures from actual runtime files when a stable fixture location is selected.
 
 ## Phase 3: RuntimeProcess Contracts
 

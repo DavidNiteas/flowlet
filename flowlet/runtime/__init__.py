@@ -2,6 +2,7 @@
 
 from .adapters import (
     LEGACY_TXN_EVENT_TYPE_MAP,
+    manager_record_to_runtime_event,
     runtime_event_to_txn_event_payload,
     txn_event_payload_to_runtime_event,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "TERMINAL_JOB_STATUSES",
     "export_runtime_manager_files",
     "list_runtime_artifacts",
+    "manager_record_to_runtime_event",
     "mirror_runtime_events",
     "model_dump_json_safe",
     "new_mirror_offsets",
