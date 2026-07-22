@@ -203,6 +203,13 @@ Introduce reducers that produce:
 - Current progress/signal/log/telemetry projection.
 - Current monitor snapshot compatibility projection.
 
+`RuntimeSnapshotLoader` now carries an optional `RuntimeProjection`. A business
+reader opts into projection-first behavior only by supplying a
+`monitor_from_projection` adapter. Without that adapter it preserves the
+existing monitor, snapshot, then status precedence while still exposing any
+available projection to the caller. This prevents Flowlet from guessing
+MetaMSTools or MassLib4Search monitor semantics.
+
 ### Phase D: Business Backend Migration
 
 MetaMSTools and MassLib4Search start using:

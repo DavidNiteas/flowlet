@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from .info import RuntimeFileLayout
+from .projection import RuntimeProjection, load_runtime_projection
 
 StatusT = TypeVar("StatusT")
 SnapshotT = TypeVar("SnapshotT")
@@ -22,6 +23,7 @@ class RuntimeSnapshotView(Generic[MonitorT, SnapshotT]):
     monitor: MonitorT
     snapshot: SnapshotT | None = None
     runtime_info: dict[str, Any] | None = None
+    projection: RuntimeProjection | None = None
 
 
 class RuntimeSnapshotLoader(Generic[StatusT, SnapshotT, MonitorT]):
@@ -35,6 +37,7 @@ class RuntimeSnapshotLoader(Generic[StatusT, SnapshotT, MonitorT]):
         monitor_loader: Callable[[str], MonitorT],
         monitor_from_snapshot: Callable[[SnapshotT], MonitorT],
         monitor_from_status: Callable[[StatusT], MonitorT],
+        monitor_from_projection: Callable[[RuntimeProjection], MonitorT] | None = None,
         normalize_monitor: Callable[[MonitorT], MonitorT] | None = None,
         layout: RuntimeFileLayout | None = None,
     ) -> None:
@@ -43,32 +46,45 @@ class RuntimeSnapshotLoader(Generic[StatusT, SnapshotT, MonitorT]):
         self.monitor_loader = monitor_loader
         self.monitor_from_snapshot = monitor_from_snapshot
         self.monitor_from_status = monitor_from_status
+        self.monitor_from_projection = monitor_from_projection
         self.normalize_monitor = normalize_monitor or (lambda monitor: monitor)
         self.layout = layout or RuntimeFileLayout()
 
     def load(self, runtime_dir: str | Path) -> RuntimeSnapshotView[MonitorT, SnapshotT] | None:
-        """Load runtime snapshot view with monitor, snapshot, then status fallback."""
+        """Load a projection-aware view with legacy monitor/snapshot/status fallback."""
         root = Path(runtime_dir)
         snapshot = self.load_snapshot(root)
+        runtime_info = self.load_runtime_info(root)
+        projection = self.load_projection(root)
+        if projection is not None and self.monitor_from_projection is not None:
+            return RuntimeSnapshotView(
+                monitor=self.normalize_monitor(self.monitor_from_projection(projection)),
+                snapshot=snapshot,
+                runtime_info=runtime_info,
+                projection=projection,
+            )
         monitor = self.load_monitor(root)
         if monitor is not None:
             return RuntimeSnapshotView(
                 monitor=self.normalize_monitor(monitor),
                 snapshot=snapshot,
-                runtime_info=self.load_runtime_info(root),
+                runtime_info=runtime_info,
+                projection=projection,
             )
         if snapshot is not None:
             return RuntimeSnapshotView(
                 monitor=self.normalize_monitor(self.monitor_from_snapshot(snapshot)),
                 snapshot=snapshot,
-                runtime_info=self.load_runtime_info(root),
+                runtime_info=runtime_info,
+                projection=projection,
             )
         status = self.load_status(root)
         if status is not None:
             return RuntimeSnapshotView(
                 monitor=self.normalize_monitor(self.monitor_from_status(status)),
                 snapshot=None,
-                runtime_info=self.load_runtime_info(root),
+                runtime_info=runtime_info,
+                projection=projection,
             )
         return None
 
@@ -80,6 +96,11 @@ class RuntimeSnapshotLoader(Generic[StatusT, SnapshotT, MonitorT]):
 
     def load_status(self, runtime_dir: str | Path) -> StatusT | None:
         return self._load_typed(Path(runtime_dir) / self.layout.status, self.status_loader)
+
+    @staticmethod
+    def load_projection(runtime_dir: str | Path) -> RuntimeProjection | None:
+        """Load the standard projection when a new runtime has produced one."""
+        return load_runtime_projection(runtime_dir)
 
     def load_runtime_info(self, runtime_dir: str | Path) -> dict[str, Any] | None:
         path = Path(runtime_dir) / self.layout.runtime_info

@@ -306,6 +306,16 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
 - Add compatibility mode for old runtime directories.
 - Update CLI/TUI to prefer projection when available.
 
+### Current Implementation Notes
+
+- `RuntimeSnapshotView` carries an optional standard `RuntimeProjection`.
+- `RuntimeSnapshotLoader` supports an optional business-owned
+  `monitor_from_projection` adapter.
+- A supplied adapter makes the standard projection the monitor source;
+  unmodified readers retain monitor/snapshot/status precedence.
+- MetaMSTools and MassLib4Search CLI adapters remain the next work because
+  their monitor schemas are business-owned.
+
 ### Acceptance
 
 - Old runtime directories remain readable.

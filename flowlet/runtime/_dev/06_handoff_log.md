@@ -349,8 +349,27 @@ Result:
 
 ```text
 All checks passed.
-30 passed.
+32 passed.
 ```
+
+### Continued Progress: Projection-Aware Snapshot Reads
+
+Added a framework-only reader migration seam.
+
+- `RuntimeSnapshotView` now exposes an optional `RuntimeProjection`.
+- `RuntimeSnapshotLoader` loads it when `runtime/projection.json` exists.
+- A business package can pass `monitor_from_projection` to opt into
+  projection-first monitor construction.
+- Without that adapter, legacy monitor/snapshot/status precedence is unchanged.
+- Flowlet does not infer business monitor fields from the framework projection.
+
+Validation:
+
+- `flowlet/tests/test_runtime.py`: 32 passed.
+- The real liver `.metams/runtime` CLI snapshot remains readable and reports
+  3 completed runs.
+- The real liver `.annotation/spec_spec_unispec_pos/runtime` CLI snapshot
+  remains readable and reports 3 completed runs.
 
 ### Boundary Reminder
 

@@ -81,3 +81,24 @@ This means the existing historical runtime files are compatible with the
 standard adapter, while a fresh run is still required to prove sidecar emission
 on the real sample.
 
+## Reader Compatibility Check
+
+The existing CLI readers were exercised against the same historical target
+directories after adding projection-aware Flowlet reads:
+
+```bash
+pixi run -e dev-all-gpu meta-ms-tools runtime-snapshot print \
+  data/large_files/ms_exp_datas/900_human_metabolites_db/workspace/900_human_metabolites_liver/.metams/runtime \
+  --format json
+pixi run -e dev-all-gpu masslib4search runtime-snapshot print \
+  data/large_files/ms_exp_datas/900_human_metabolites_db/workspace/900_human_metabolites_liver/.annotation/spec_spec_unispec_pos/runtime \
+  --format json
+```
+
+Current result:
+
+- Both commands succeed and retain `runtime_info`, `monitor`, and `snapshot`.
+- The MetaMSTools monitor reports 3 completed runs.
+- The MassLib4Search monitor reports 3 completed runs.
+- Neither historical directory has `runtime/projection.json`, so these checks
+  prove legacy fallback rather than projection-first behavior.

@@ -941,3 +941,58 @@ def test_runtime_snapshot_loader_uses_monitor_snapshot_then_fallbacks(tmp_path):
 
     assert view is not None
     assert view.monitor == {"source": "monitor", "total": 2}
+
+
+def test_runtime_snapshot_loader_optionally_prefers_standard_projection(tmp_path):
+    store = RuntimeStore(tmp_path / "runtime")
+    store.write_monitor_snapshot({"source": "legacy-monitor", "total": 99})
+    store.write_projection(
+        RuntimeProjection(
+            runtime_id="runtime1",
+            status=RuntimeEventStatus.SUCCEEDED,
+            status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+            terminal_success_count=2,
+        ).model_dump(mode="json")
+    )
+    loader = RuntimeSnapshotLoader(
+        status_loader=json.loads,
+        snapshot_loader=json.loads,
+        monitor_loader=json.loads,
+        monitor_from_snapshot=lambda snapshot: snapshot,
+        monitor_from_status=lambda status: status,
+        monitor_from_projection=lambda projection: {
+            "source": "projection",
+            "status": projection.status,
+            "completed": projection.terminal_success_count,
+        },
+    )
+
+    view = loader.load(store.runtime_dir)
+
+    assert view is not None
+    assert view.monitor == {
+        "source": "projection",
+        "status": RuntimeEventStatus.SUCCEEDED,
+        "completed": 2,
+    }
+    assert view.projection is not None
+    assert view.projection.runtime_id == "runtime1"
+
+
+def test_runtime_snapshot_loader_keeps_legacy_precedence_without_projection_mapper(tmp_path):
+    store = RuntimeStore(tmp_path / "runtime")
+    store.write_monitor_snapshot({"source": "legacy-monitor"})
+    store.write_projection(RuntimeProjection(runtime_id="runtime1").model_dump(mode="json"))
+    loader = RuntimeSnapshotLoader(
+        status_loader=json.loads,
+        snapshot_loader=json.loads,
+        monitor_loader=json.loads,
+        monitor_from_snapshot=lambda snapshot: snapshot,
+        monitor_from_status=lambda status: status,
+    )
+
+    view = loader.load(store.runtime_dir)
+
+    assert view is not None
+    assert view.monitor == {"source": "legacy-monitor"}
+    assert view.projection is not None
