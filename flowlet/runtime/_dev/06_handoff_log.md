@@ -211,6 +211,7 @@ Added:
 - `RuntimeProcessContext`
 - `RuntimeProcess`
 - `RuntimeProcessBase`
+- `RuntimeProcessRunner`
 - `RuntimeUnsupportedOperationError`
 - `runtime_process_spec_payload(...)`
 
@@ -220,11 +221,13 @@ Scope:
 - They do not define OpenMS, annotation search, study layout, resume policy, or business monitor semantics.
 - `RuntimeProcessContext` writes standard `RuntimeEvent` objects to a `RuntimeEventStore`.
 - `RuntimeProcessBase` gives concrete implementations a default unsupported-operation behavior.
+- `RuntimeProcessRunner` wraps one process start call with standard started/completed/failed/unsupported events.
+- Context helpers now cover status, progress, artifact, error, log, metric, signal, and checkpoint events.
 
 Remaining Phase 3 work:
 
-- Add context helpers for logs, metrics, signals, and checkpoints.
-- Add a minimal process runner for start/completed/failed wrapping.
+- Decide whether resource usage belongs in Phase 3 or Phase 4 reducers.
+- Decide whether pause/resume/retry/cancel dispatch belongs in Phase 3 or Phase 5 executor prototype.
 - Add reducer/projection work in Phase 4 before migrating CLI/TUI readers.
 
 Validation commands:
@@ -239,7 +242,7 @@ Result:
 
 ```text
 All checks passed.
-18 passed.
+21 passed.
 ```
 
 ### Boundary Reminder

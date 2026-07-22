@@ -16,6 +16,7 @@ from flowlet.runtime import (
     RuntimeProcessCapabilities,
     RuntimeProcessContext,
     RuntimeProcessOperation,
+    RuntimeProcessRunner,
     RuntimeProcessSpec,
     RuntimeProgress,
     RuntimeResourceRequest,
@@ -174,6 +175,95 @@ def test_runtime_process_context_emits_standard_events(tmp_path):
     assert artifact.payload["kind"] == "result"
     assert completed.status_class == RuntimeStatusClass.TERMINAL_SUCCESS
     assert all(event.parent_process_id == "parent1" for event in store.list())
+
+
+def test_runtime_process_context_emits_auxiliary_events(tmp_path):
+    store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
+    context = RuntimeProcessContext(runtime_id="runtime1", process_id="process1", event_store=store)
+
+    log = context.emit_log("hello", level="warning")
+    metric = context.emit_metric("memory", 10, unit="bytes")
+    signal = context.emit_signal("ready", value=True, status=RuntimeEventStatus.RUNNING)
+    checkpoint = context.checkpoint("stage-ready", payload={"stage": "prepare"})
+
+    assert [event.event_type for event in store.list()] == [
+        "log.emitted",
+        "metric.sampled",
+        "signal.changed",
+        "process.checkpointed",
+    ]
+    assert log.message == "hello"
+    assert log.payload["level"] == "warning"
+    assert metric.payload == {"name": "memory", "value": 10, "unit": "bytes"}
+    assert signal.payload == {"name": "ready", "value": True}
+    assert signal.status_class == RuntimeStatusClass.ACTIVE
+    assert checkpoint.payload == {"name": "stage-ready", "stage": "prepare"}
+
+
+def test_runtime_process_runner_emits_lifecycle_events(tmp_path):
+    class ExampleProcess(RuntimeProcessBase):
+        def start(self, context: RuntimeProcessContext) -> dict[str, Any]:
+            context.emit_progress(1, total=1)
+            return {"ok": True}
+
+    store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
+    spec = RuntimeProcessSpec(process_id="process1", process_type="example.process", metadata={"source": "test"})
+    context = RuntimeProcessContext(runtime_id="runtime1", process_id="process1", event_store=store)
+    result = RuntimeProcessRunner(context).run(ExampleProcess(spec))
+
+    assert result == {"ok": True}
+    assert [event.event_type for event in store.list()] == [
+        "process.status.changed",
+        "process.progressed",
+        "process.status.changed",
+    ]
+    assert store.list()[0].status_class == RuntimeStatusClass.ACTIVE
+    assert store.list()[-1].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert store.list()[-1].payload == {"result": {"ok": True}}
+
+
+def test_runtime_process_runner_emits_failure_and_unsupported_events(tmp_path):
+    class FailingProcess(RuntimeProcessBase):
+        def start(self, context: RuntimeProcessContext) -> None:
+            del context
+            raise ValueError("bad process")
+
+    class UnsupportedStartProcess(RuntimeProcessBase):
+        pass
+
+    store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
+    context = RuntimeProcessContext(runtime_id="runtime1", process_id="process1", event_store=store)
+    spec = RuntimeProcessSpec(process_id="process1", process_type="example.process")
+
+    try:
+        RuntimeProcessRunner(context).run(FailingProcess(spec))
+    except ValueError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("failing process should raise")
+
+    unsupported_store = RuntimeEventJsonlStore(tmp_path / "unsupported.runtime.jsonl")
+    unsupported_context = RuntimeProcessContext(
+        runtime_id="runtime1",
+        process_id="process2",
+        event_store=unsupported_store,
+    )
+    unsupported_spec = RuntimeProcessSpec(
+        process_id="process2",
+        process_type="example.unsupported",
+        capabilities=RuntimeProcessCapabilities(can_start=False),
+    )
+    try:
+        RuntimeProcessRunner(unsupported_context).run(UnsupportedStartProcess(unsupported_spec))
+    except RuntimeUnsupportedOperationError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("unsupported start should raise")
+
+    assert [event.event_type for event in store.list()] == ["process.status.changed", "process.failed"]
+    assert store.list()[-1].error is not None
+    assert store.list()[-1].error.type == "ValueError"
+    assert [event.event_type for event in unsupported_store.list()] == ["process.start.unsupported"]
 
 
 def test_runtime_process_base_reports_unsupported_operation(tmp_path):

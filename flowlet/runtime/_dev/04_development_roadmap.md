@@ -145,15 +145,16 @@ Introduce process as the minimum runtime operation unit.
 
 - `RuntimeProcessSpec`, `RuntimeProcessCapabilities`, `RuntimeResourceRequest`, `RuntimeRetryPolicy`, and `RuntimeProcessState` are introduced in `flowlet.runtime.process`.
 - `RuntimeProcessContext` can emit standard status, progress, artifact, and error events into a `RuntimeEventStore`.
+- `RuntimeProcessContext` also emits standard log, metric, signal, and checkpoint events.
 - `RuntimeProcess` is a protocol for concrete implementations.
 - `RuntimeProcessBase` provides default unsupported-operation hook behavior.
 - `RuntimeUnsupportedOperationError` converts to the standard `RuntimeErrorInfo` contract.
+- `RuntimeProcessRunner` wraps process execution with standard start/completed/failed/unsupported events.
 
 ### Remaining Phase 3 Work
 
-- Add explicit log, metric, signal, and checkpoint helpers to `RuntimeProcessContext`.
-- Add a minimal process runner that wraps start/completed/failed event emission.
 - Decide whether resource usage belongs in Phase 3 or Phase 4 reducers.
+- Decide whether pause/resume/retry/cancel runner dispatch belongs in Phase 3 or Phase 5 executor prototype.
 - Keep business process mappings in MetaMSTools and MassLib4Search adapters, not in Flowlet.
 
 ## Phase 4: Runtime Projection Reducers

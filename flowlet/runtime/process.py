@@ -244,6 +244,61 @@ class RuntimeProcessContext:
         artifact_payload = {"path": str(path), **(payload or {})}
         return self._emit("artifact.produced", payload=artifact_payload, metadata=metadata)
 
+    def emit_log(
+        self,
+        message: str,
+        *,
+        level: str = "info",
+        metadata: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> RuntimeEvent:
+        """Emit a standard log event."""
+        log_payload = {"level": level, **(payload or {})}
+        return self._emit("log.emitted", message=message, payload=log_payload, metadata=metadata)
+
+    def emit_metric(
+        self,
+        name: str,
+        value: Any,
+        *,
+        unit: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> RuntimeEvent:
+        """Emit a standard metric event."""
+        metric_payload = {"name": name, "value": value, "unit": unit, **(payload or {})}
+        return self._emit("metric.sampled", payload=metric_payload, metadata=metadata)
+
+    def emit_signal(
+        self,
+        name: str,
+        *,
+        value: Any = None,
+        status: RuntimeEventStatus | str | None = None,
+        metadata: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> RuntimeEvent:
+        """Emit a standard signal event."""
+        signal_payload = {"name": name, "value": value, **(payload or {})}
+        return self._emit(
+            "signal.changed",
+            status=status,
+            status_class=_status_class(status) if status is not None else None,
+            payload=signal_payload,
+            metadata=metadata,
+        )
+
+    def checkpoint(
+        self,
+        name: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> RuntimeEvent:
+        """Emit a standard checkpoint event."""
+        checkpoint_payload = {"name": name, **(payload or {})}
+        return self._emit("process.checkpointed", payload=checkpoint_payload, metadata=metadata)
+
     def request_cancel(self) -> None:
         """Mark this context as cancelled."""
         self._cancel_requested = True
@@ -383,6 +438,46 @@ class RuntimeProcessBase:
             process_type=self.spec.process_type,
             parent_process_id=self.spec.parent_process_id,
         )
+
+
+class RuntimeProcessRunner:
+    """Minimal runner that wraps process execution with standard events."""
+
+    def __init__(self, context: RuntimeProcessContext) -> None:
+        self.context = context
+
+    def run(self, process: RuntimeProcess) -> Any:
+        """Run a process and emit start/completed/failed events."""
+        process_id = process.spec.resolved_process_id()
+        if process_id != self.context.process_id:
+            raise ValueError(
+                f"Context process_id {self.context.process_id!r} does not match process spec {process_id!r}."
+            )
+        if not process.spec.capabilities.supports(RuntimeProcessOperation.START):
+            error = RuntimeUnsupportedOperationError(process_id, RuntimeProcessOperation.START)
+            self.context.emit_error(error.to_error_info(), event_type="process.start.unsupported")
+            raise error
+        self.context.emit_status(
+            RuntimeEventStatus.RUNNING,
+            message="process started",
+            payload={"process_type": process.spec.process_type},
+            metadata=process.spec.metadata,
+        )
+        try:
+            result = process.start(self.context)
+        except RuntimeUnsupportedOperationError as exc:
+            self.context.emit_error(exc.to_error_info(), event_type=f"process.{exc.operation.value}.unsupported")
+            raise
+        except Exception as exc:
+            self.context.emit_error(exc)
+            raise
+        self.context.emit_status(
+            RuntimeEventStatus.SUCCEEDED,
+            message="process completed",
+            payload={"result": result if isinstance(result, dict) else {"value": result}},
+            metadata=process.spec.metadata,
+        )
+        return result
 
 
 def runtime_process_spec_payload(**kwargs: Any) -> dict[str, Any]:
