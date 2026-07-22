@@ -25,6 +25,20 @@ inputs. Do not overwrite `.metams/runtime`, an existing annotation id, or study
 results. Record the commands and artifact counts in
 [07_real_workspace_regression.md](07_real_workspace_regression.md).
 
+### MetaMSTools Fresh Regression
+
+Completed a fresh isolated three-file liver analysis using the synchronous
+backend. The run completed successfully in 90.515 seconds and is recorded in
+[07_real_workspace_regression.md](07_real_workspace_regression.md).
+
+It is the first real persisted runtime confirmed to satisfy the complete
+current writer contract: `runtime/processes.json`, root `process.created` at
+sidecar id `0`, valid projection, legacy compatibility stream, and a completed
+projection-aware package snapshot reader.
+
+MassLib4Search must still receive the same fresh-run evidence using a new
+workspace annotation id.
+
 ### Completed
 
 - Added initial design document set under `flowlet/flowlet/runtime/_dev`.

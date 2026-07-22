@@ -201,3 +201,38 @@ pixi run -e dev-all-gpu python flowlet/flowlet/runtime/_dev/validate_runtime_sid
 pixi run -e dev-all-gpu meta-ms-tools runtime-snapshot print "$metams_runtime" --format json
 pixi run -e dev-all-gpu masslib4search runtime-snapshot print "$mass_runtime" --format json
 ```
+
+## Execution Evidence
+
+### MetaMSTools, 2026-07-22
+
+The isolated MetaMSTools command above was executed with the three real liver
+mzML files and `batch_config.worker_type=synchronous`.
+
+```text
+runtime: .metams/runtime_regression_current
+output:  .metams/regression_output_current
+job id:  90df7199c63f4567883a2ec2db15efc4
+elapsed: 90.515 seconds
+result:  completed, 3 of 3 runs completed, 0 failed
+```
+
+Observed artifacts:
+
+- The output directory contains the persisted study result (149 MB, seven
+  files) without modifying the existing study root artifacts.
+- `events.jsonl` contains 334 legacy events.
+- `runtime/events.runtime.jsonl` contains 335 standard events. Event `0` is
+  the root `process.created` declaration.
+- `runtime/processes.json` declares the root
+  `metams.openms.analysis` process with `metadata.engine = MetaMSTools`.
+- `runtime/projection.json` reports `succeeded` and contains 94 projected
+  stateful events. It is intentionally smaller than the JSONL stream because
+  subsequent append-only telemetry events do not force projection rewrites.
+- `validate_runtime_sidecar.py --require-sidecar --require-current-layout`
+  passes, and `meta-ms-tools runtime-snapshot print --format json` reports a
+  completed monitor with 3 total, 3 completed, and 0 remaining.
+
+The MassLib4Search execution evidence is pending. Do not reuse the
+`runtime_regression_current` annotation id if its target directory appears;
+choose a new unique suffix for the next run.
