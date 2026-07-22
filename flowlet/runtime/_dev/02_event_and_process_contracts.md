@@ -298,3 +298,23 @@ Reducers consume events and produce framework-level state:
 - Timeline.
 
 Business packages can provide additional reducers for business monitor summaries.
+
+## Standard Event Streaming
+
+The durable standard stream is `runtime/events.runtime.jsonl`. Flowlet exposes
+three framework-level helpers around that file:
+
+- `stream_runtime_event_jsonl(...)` polls the append-only sidecar and yields
+  `RuntimeEvent` objects plus `None` heartbeat markers.
+- `sse_encode_runtime_event(...)` writes a complete SSE frame whose `id` is the
+  standard event id, whose event name is `event_type`, and whose data is the
+  full schema-versioned event JSON.
+- `parse_sse_runtime_events(...)` restores full standard event frames for an
+  HTTP client without reconstructing data from event names.
+
+An event stream must receive an explicit `is_terminal(event)` predicate. A
+terminal child process does not necessarily terminate the enclosing runtime.
+After a match, the helper drains events already appended to the same sidecar
+snapshot, then ends the iterator. Missing sidecars are valid for a newly
+created live runtime and produce heartbeats until an event appears or the
+caller-selected idle timeout expires.

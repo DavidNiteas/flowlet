@@ -225,6 +225,27 @@ Only after CLI/TUI/API readers support RuntimeEvent:
 - Deprecate direct `TxnEvent` as canonical storage.
 - Keep compatibility readers for old runtime directories.
 
+## HTTP Event Stream Compatibility
+
+Both business FastAPI adapters expose two deliberately separate event streams:
+
+```text
+GET /api/jobs/{job_id}/events
+GET /api/jobs/{job_id}/runtime-events
+```
+
+`/events` remains the legacy `TxnEvent` SSE contract and is unchanged.
+`/runtime-events` is additive and sends complete Flowlet `RuntimeEvent` SSE
+frames from `runtime/events.runtime.jsonl`. Its `since` cursor accepts either a
+numeric or string standard event id.
+
+The business adapter, not Flowlet, decides when its root job has ended. The
+current adapters match a terminal `status_class` only when `process_id` equals
+the requested job id. Existing business status strings such as `completed`
+remain legal custom event status values; `terminal_success` is the portable
+framework classification. Durable replay is available after a runtime has
+persisted its sidecar. A live request waits for the first sidecar event.
+
 ## Compatibility Acceptance Requirements
 
 Every phase must pass:

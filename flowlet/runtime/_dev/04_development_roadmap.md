@@ -335,6 +335,10 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
   planned-run count while preserving legacy run/stage/task detail.
 - Standard stream callers provide their own terminal predicate and can drain
   trailing events after it matches.
+- `stream_runtime_event_jsonl` provides durable sidecar polling, and standard
+  SSE encoder/parser helpers preserve the complete `RuntimeEvent` envelope.
+- Both business FastAPI adapters provide additive `/runtime-events` endpoints;
+  legacy `/events` remains unchanged.
 
 ## Phase 9: Legacy Cleanup
 

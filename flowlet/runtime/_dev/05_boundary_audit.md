@@ -135,6 +135,13 @@ This audit classifies the current `flowlet.runtime` APIs against the redesigned 
   `stream_runtime_event_store` is the standard counterpart and requires an
   explicit business terminal predicate rather than guessing from a process event.
 
+`stream_runtime_event_jsonl`, `sse_encode_runtime_event`, and `parse_sse_runtime_events`
+
+- Classification: stable framework runtime transport API.
+- Reason: they only move the standard `RuntimeEvent` envelope across durable
+  JSONL and SSE boundaries; they do not interpret business event payloads.
+- Direction: business HTTP clients may adopt them alongside legacy event APIs.
+
 `write_runtime_status`
 
 - Classification: compatibility helper.

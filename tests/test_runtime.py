@@ -35,12 +35,14 @@ from flowlet.runtime import (
     list_runtime_artifacts,
     load_runtime_projection,
     manager_record_to_runtime_event,
+    parse_sse_runtime_events,
     runtime_event_payload,
     runtime_event_to_txn_event_payload,
     runtime_info_payload,
     runtime_process_spec_payload,
     runtime_projection_payload,
     sse_encode_runtime_event,
+    stream_runtime_event_jsonl,
     stream_runtime_event_store,
     txn_event_payload_to_runtime_event,
     wait_runtime_event_store,
@@ -696,6 +698,54 @@ def test_runtime_event_store_supports_string_cursor_and_standard_streaming():
     assert "id: evt-2" in encoded
     assert "event: process.status.changed" in encoded
     assert json.loads(encoded.split("data: ", maxsplit=1)[1])['status'] == "succeeded"
+
+
+def test_runtime_event_jsonl_stream_replays_trailing_events_and_parses_sse(tmp_path):
+    path = tmp_path / "events.runtime.jsonl"
+    store = RuntimeEventJsonlStore(path)
+    started = store.append(
+        RuntimeEvent(
+            event_id="evt-1",
+            runtime_id="runtime1",
+            process_id="job1",
+            event_type="process.status.changed",
+            timestamp=1.0,
+            status=RuntimeEventStatus.RUNNING,
+            status_class=RuntimeStatusClass.ACTIVE,
+        )
+    )
+    completed = store.append(
+        RuntimeEvent(
+            event_id="evt-2",
+            runtime_id="runtime1",
+            process_id="job1",
+            event_type="process.status.changed",
+            timestamp=2.0,
+            status=RuntimeEventStatus.SUCCEEDED,
+            status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+        )
+    )
+    trailing = store.append(
+        RuntimeEvent(
+            event_id="evt-3",
+            runtime_id="runtime1",
+            process_id="job1",
+            event_type="log.emitted",
+            timestamp=3.0,
+            message="finished",
+        )
+    )
+
+    streamed = list(
+        stream_runtime_event_jsonl(
+            path,
+            is_terminal=lambda event: event.event_id == completed.event_id,
+        )
+    )
+    frames = "".join(sse_encode_runtime_event(event) for event in streamed)
+
+    assert streamed == [started, completed, trailing]
+    assert list(parse_sse_runtime_events(iter(frames.splitlines()))) == streamed
 
 
 def test_runtime_store_appends_standard_runtime_event_sidecar(tmp_path):

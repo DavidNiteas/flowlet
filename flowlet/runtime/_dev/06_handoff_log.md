@@ -443,6 +443,24 @@ Validation:
 
 - `flowlet/tests/test_runtime.py`: 34 passed.
 
+### Continued Progress: Standard Sidecar HTTP API
+
+- Flowlet now provides JSONL sidecar polling and full standard SSE parsing in
+  addition to the in-memory standard event-store stream.
+- MetaMSTools and MassLib4Search expose additive
+  `GET /api/jobs/{job_id}/runtime-events` endpoints. They replay
+  `runtime/events.runtime.jsonl` and leave legacy `/events` untouched.
+- The adapter owns root-job termination: a terminal status class only ends the
+  stream when the event process id equals the requested job id. Flowlet drains
+  events already in the sidecar after that event.
+- Existing business `completed` event status remains a permitted custom value;
+  `terminal_success` provides its framework-neutral terminal classification.
+
+Validation:
+
+- `flowlet/tests/test_runtime.py`: 35 passed.
+- MetaMSTools and MassLib4Search backend suites: 34 passed.
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

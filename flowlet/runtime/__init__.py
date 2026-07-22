@@ -58,7 +58,13 @@ from .schema import (
 from .sidecar import RuntimeEventSidecarWriter
 from .snapshot import RuntimeSnapshotLoader, RuntimeSnapshotView
 from .store import RuntimeStore, write_json
-from .stream import sse_encode_runtime_event, stream_runtime_event_store, wait_runtime_event_store
+from .stream import (
+    parse_sse_runtime_events,
+    sse_encode_runtime_event,
+    stream_runtime_event_jsonl,
+    stream_runtime_event_store,
+    wait_runtime_event_store,
+)
 
 __all__ = [
     "EventBuffer",
@@ -105,6 +111,7 @@ __all__ = [
     "mirror_runtime_events",
     "model_dump_json_safe",
     "new_mirror_offsets",
+    "parse_sse_runtime_events",
     "runtime_event_to_txn_event_payload",
     "runtime_event_payload",
     "runtime_info_payload",
@@ -113,6 +120,7 @@ __all__ = [
     "sse_encode_event",
     "sse_encode_runtime_event",
     "stream_runtime_event_store",
+    "stream_runtime_event_jsonl",
     "stream_runtime_events",
     "txn_event_payload_to_runtime_event",
     "wait_runtime_events",
