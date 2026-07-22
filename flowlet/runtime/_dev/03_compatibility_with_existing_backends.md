@@ -246,6 +246,11 @@ remain legal custom event status values; `terminal_success` is the portable
 framework classification. Durable replay is available after a runtime has
 persisted its sidecar. A live request waits for the first sidecar event.
 
+Both `TxnBackendHttpClient` implementations now expose a separate
+`runtime_events(job_id, since=...) -> Iterator[RuntimeEvent]` method. This
+method is intentionally parallel to `events()`: it does not transform standard
+events into legacy events or alter the existing TUI/GUI monitor path.
+
 ## Compatibility Acceptance Requirements
 
 Every phase must pass:

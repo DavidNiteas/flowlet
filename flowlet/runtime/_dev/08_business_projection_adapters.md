@@ -36,6 +36,12 @@ This keeps the current CLI JSON contract intact: `runtime_info`, `monitor`,
 and `snapshot` remain present. The projection can be exposed as an additional
 field only when the relevant CLI format is intentionally extended.
 
+The same restriction applies to live UI: standard HTTP events may be consumed
+as an additional observability feed, but existing TUI/GUI monitor rendering
+continues to use business snapshots and legacy business events. A UI migration
+requires a package-owned presentation adapter; it must not infer runs, stages,
+or annotation state from framework process ids.
+
 ## MetaMSTools Adapter
 
 Inputs:

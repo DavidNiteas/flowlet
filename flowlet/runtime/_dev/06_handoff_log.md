@@ -461,6 +461,21 @@ Validation:
 - `flowlet/tests/test_runtime.py`: 35 passed.
 - MetaMSTools and MassLib4Search backend suites: 34 passed.
 
+### Continued Progress: Standard HTTP Client Read Path
+
+- Both `TxnBackendHttpClient` implementations now expose
+  `runtime_events(job_id, since=...)`, returning Flowlet `RuntimeEvent` values
+  from the additive standard SSE endpoint.
+- The client API preserves numeric and string cursor ids and uses Flowlet's
+  full-frame parser rather than rebuilding state from SSE event names.
+- TUI and GUI remain on their legacy business event and projection paths. This
+  is intentional: their monitor models need package-owned run/stage/FSM
+  grouping that Flowlet cannot infer.
+
+Validation:
+
+- MetaMSTools and MassLib4Search HTTP client tests: 10 passed.
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

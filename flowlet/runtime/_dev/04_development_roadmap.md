@@ -339,6 +339,10 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
   SSE encoder/parser helpers preserve the complete `RuntimeEvent` envelope.
 - Both business FastAPI adapters provide additive `/runtime-events` endpoints;
   legacy `/events` remains unchanged.
+- Both business HTTP clients expose `runtime_events()` and parse complete
+  standard SSE frames into `RuntimeEvent` values. Current TUI/GUI monitors
+  deliberately remain on their business event/projection paths until they have
+  a defined business adapter for standard event presentation.
 
 ## Phase 9: Legacy Cleanup
 
