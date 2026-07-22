@@ -246,7 +246,11 @@ started before dispatch failed. A planning fault regression proves the root
 attempt, execution, and command all become failed before the backend lease is
 released. The complete MetaMSTools txn suite passes at 86 tests. Public
 HTTP/client continuation dispatches the same durable path asynchronously;
-rerun entrypoints and real-workspace acceptance remain open.
+HTTP/client rerun now atomically replaces the runtime lineage in place. The
+new identity increments `generation`, references the abandoned runtime, and
+preserves `logical_task_id`. MetaMSTools removes study outputs while retaining
+the `.metams` config/runtime tree before Flowlet resets the runtime directory.
+Real-workspace acceptance remains open.
 
 MassLib4Search annotation execution now declares its stable run/study DAG in
 Flowlet and reports package-owned serial, thread, and Ray execution through
@@ -262,6 +266,13 @@ retaining `/resume` as a compatibility alias. Its current continuation still
 uses a derived backend job id inside the stable runtime lineage; converging
 that compatibility identity with the original backend job remains migration
 work rather than a Flowlet concern.
+
+MassLib4Search annotation rerun uses the same Flowlet directory transaction,
+creates a new runtime/job identity with generation +1, and changes the package
+write policy to `overwrite`. Annotation artifact cleanup therefore remains in
+the package executor. The old backend record is removed after the replacement
+record is initialized; no old event, execution, attempt, or checkpoint is
+visible in the new durable store.
 
 ## Acceptance
 

@@ -1116,3 +1116,20 @@ Keep these in business packages:
   as remaining identity convergence work.
 - MetaMSTools backend/client tests pass at 41; MassLib4Search backend/client
   tests pass at 22. Ruff passes for both changed surfaces.
+
+### Phase 11 Continued: Native Rerun
+
+- Both txn backends expose backend, inline, HTTP, and client rerun operations.
+- Rerun calls `RuntimeDirectoryManager.rerun()` and creates a fresh identity
+  with a new `runtime_id`, generation +1, stable `logical_task_id`, and
+  `rerun_of_runtime_id` pointing to the immediately abandoned lineage. The new
+  ledger begins with only initial execution ordinal 1.
+- MetaMSTools owns selective study cleanup. It removes generated study output
+  but preserves the tree containing `.metams/config` and the runtime reset
+  lock. MassLib4Search owns annotation cleanup through its existing
+  `overwrite` write policy; Flowlet does not inspect either package's files.
+- The replaced backend record is removed after the new record is initialized,
+  while the runtime filesystem path remains stable.
+- Full MetaMSTools txn/CLI regression passes at 165 tests. Full
+  MassLib4Search txn/CLI regression passes at 72 tests with one existing Ray
+  FutureWarning. Ruff passes for all changed files.
