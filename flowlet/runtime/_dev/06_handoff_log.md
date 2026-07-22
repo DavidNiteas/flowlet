@@ -48,6 +48,13 @@ The failure and queued-cancellation cases use persisted standard sidecars and
 the public HTTP endpoint, so future standard-only rollout work has direct
 terminal transport coverage without changing the current dual-write default.
 
+### Standard Cursor Replay Coverage
+
+Both backend suites also verify durable HTTP replay from `since=0`: the root
+declaration at id `0` is excluded, later standard events are replayed, and the
+terminal success event is still delivered. This is the reconnect baseline for
+the additive standard SSE endpoints.
+
 ### MetaMSTools Fresh Regression
 
 Completed a fresh isolated three-file liver analysis using the synchronous

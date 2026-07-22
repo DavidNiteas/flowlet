@@ -78,6 +78,10 @@ Required transport behavior:
 5. An unavailable sidecar returns a package transport error; it must not
    fabricate a standard event from a business snapshot.
 
+Both backend suites verify durable replay from `since=0`: the root declaration
+at id `0` is not repeated, later events are returned, and the terminal root
+event remains visible.
+
 ## Presentation Model
 
 Each package must create a presentation adapter with two outputs.
