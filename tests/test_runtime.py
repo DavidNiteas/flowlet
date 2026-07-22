@@ -12,15 +12,24 @@ from flowlet.runtime import (
     RuntimeEventSidecarWriter,
     RuntimeEventStatus,
     RuntimeInfo,
+    RuntimeProcessBase,
+    RuntimeProcessCapabilities,
+    RuntimeProcessContext,
+    RuntimeProcessOperation,
+    RuntimeProcessSpec,
     RuntimeProgress,
+    RuntimeResourceRequest,
+    RuntimeRetryPolicy,
     RuntimeSnapshotLoader,
     RuntimeStatusClass,
     RuntimeStore,
+    RuntimeUnsupportedOperationError,
     list_runtime_artifacts,
     manager_record_to_runtime_event,
     runtime_event_payload,
     runtime_event_to_txn_event_payload,
     runtime_info_payload,
+    runtime_process_spec_payload,
     txn_event_payload_to_runtime_event,
 )
 
@@ -117,6 +126,72 @@ def test_runtime_event_accepts_custom_status_and_error():
     assert payload["status"] == "domain_waiting"
     assert payload["status_class"] == "blocked"
     assert payload["error"]["retryable"] is True
+
+
+def test_runtime_process_spec_payload_is_json_safe():
+    payload = runtime_process_spec_payload(
+        process_id="process1",
+        process_type="example.process",
+        display_name="Example process",
+        parent_process_id="parent1",
+        inputs={"domain": {"sample": "liver"}},
+        metadata={"source": "test"},
+        capabilities=RuntimeProcessCapabilities(can_cancel=True, can_cleanup=True),
+        resource_request=RuntimeResourceRequest(cpu=2, memory_bytes=1024, labels={"queue": "local"}),
+        retry_policy=RuntimeRetryPolicy(max_attempts=2, backoff_seconds=1.5),
+    )
+
+    restored = RuntimeProcessSpec.model_validate(payload)
+
+    assert restored.resolved_process_id() == "process1"
+    assert restored.capabilities.supports(RuntimeProcessOperation.CANCEL)
+    assert not restored.capabilities.supports(RuntimeProcessOperation.PAUSE)
+    assert payload["resource_request"]["labels"] == {"queue": "local"}
+    assert payload["retry_policy"]["max_attempts"] == 2
+
+
+def test_runtime_process_context_emits_standard_events(tmp_path):
+    store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
+    context = RuntimeProcessContext(
+        runtime_id="runtime1",
+        process_id="process1",
+        parent_process_id="parent1",
+        event_store=store,
+        runtime_dir=tmp_path,
+        metadata={"source": "test"},
+    )
+
+    started = context.emit_status(RuntimeEventStatus.RUNNING)
+    progressed = context.emit_progress(1, total=2, description="half")
+    artifact = context.emit_artifact(context.artifact_path("result.json"), payload={"kind": "result"})
+    completed = context.emit_status(RuntimeEventStatus.SUCCEEDED)
+
+    assert [event.event_id for event in store.list()] == [1, 2, 3, 4]
+    assert started.event_type == "process.status.changed"
+    assert progressed.event_type == "process.progressed"
+    assert progressed.progress is not None
+    assert progressed.progress.percent == 50.0
+    assert artifact.payload["kind"] == "result"
+    assert completed.status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert all(event.parent_process_id == "parent1" for event in store.list())
+
+
+def test_runtime_process_base_reports_unsupported_operation(tmp_path):
+    store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
+    context = RuntimeProcessContext(runtime_id="runtime1", process_id="process1", event_store=store)
+    process = RuntimeProcessBase(RuntimeProcessSpec(process_id="process1", process_type="example.process"))
+
+    try:
+        process.cancel(context)
+    except RuntimeUnsupportedOperationError as exc:
+        event = context.emit_error(exc.to_error_info(), event_type="process.cancel.unsupported")
+    else:  # pragma: no cover
+        raise AssertionError("cancel should be unsupported")
+
+    assert event.event_type == "process.cancel.unsupported"
+    assert event.error is not None
+    assert event.error.type == "RuntimeUnsupportedOperationError"
+    assert event.error.context == {"process_id": "process1", "operation": "cancel"}
 
 
 def test_runtime_event_jsonl_store_appends_loads_and_waits(tmp_path):

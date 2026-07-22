@@ -118,6 +118,8 @@ Make standard events storable and compatible with current `TxnEvent`.
 
 ## Phase 3: RuntimeProcess Contracts
 
+Status: in progress.
+
 ### Goal
 
 Introduce process as the minimum runtime operation unit.
@@ -138,6 +140,21 @@ Introduce process as the minimum runtime operation unit.
 - A process can declare unsupported cancel/pause/retry operations.
 - A process context can report errors and artifacts.
 - Unit tests cover success, failure, and unsupported operation.
+
+### Current Implementation Notes
+
+- `RuntimeProcessSpec`, `RuntimeProcessCapabilities`, `RuntimeResourceRequest`, `RuntimeRetryPolicy`, and `RuntimeProcessState` are introduced in `flowlet.runtime.process`.
+- `RuntimeProcessContext` can emit standard status, progress, artifact, and error events into a `RuntimeEventStore`.
+- `RuntimeProcess` is a protocol for concrete implementations.
+- `RuntimeProcessBase` provides default unsupported-operation hook behavior.
+- `RuntimeUnsupportedOperationError` converts to the standard `RuntimeErrorInfo` contract.
+
+### Remaining Phase 3 Work
+
+- Add explicit log, metric, signal, and checkpoint helpers to `RuntimeProcessContext`.
+- Add a minimal process runner that wraps start/completed/failed event emission.
+- Decide whether resource usage belongs in Phase 3 or Phase 4 reducers.
+- Keep business process mappings in MetaMSTools and MassLib4Search adapters, not in Flowlet.
 
 ## Phase 4: Runtime Projection Reducers
 

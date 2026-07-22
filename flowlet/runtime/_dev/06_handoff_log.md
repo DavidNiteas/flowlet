@@ -196,6 +196,52 @@ This is expected for historical runs made before sidecar writing was added.
 Strict validation should be run only after a fresh execution with the current
 code.
 
+### Continued Progress: RuntimeProcess Contracts
+
+Started Phase 3 implementation.
+
+Added:
+
+- `flowlet.runtime.process.RuntimeProcessSpec`
+- `RuntimeProcessCapabilities`
+- `RuntimeResourceRequest`
+- `RuntimeRetryPolicy`
+- `RuntimeProcessState`
+- `RuntimeProcessOperation`
+- `RuntimeProcessContext`
+- `RuntimeProcess`
+- `RuntimeProcessBase`
+- `RuntimeUnsupportedOperationError`
+- `runtime_process_spec_payload(...)`
+
+Scope:
+
+- These APIs are business-neutral framework contracts.
+- They do not define OpenMS, annotation search, study layout, resume policy, or business monitor semantics.
+- `RuntimeProcessContext` writes standard `RuntimeEvent` objects to a `RuntimeEventStore`.
+- `RuntimeProcessBase` gives concrete implementations a default unsupported-operation behavior.
+
+Remaining Phase 3 work:
+
+- Add context helpers for logs, metrics, signals, and checkpoints.
+- Add a minimal process runner for start/completed/failed wrapping.
+- Add reducer/projection work in Phase 4 before migrating CLI/TUI readers.
+
+Validation commands:
+
+```bash
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__init__.py flowlet/tests/test_runtime.py --fix
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__init__.py flowlet/tests/test_runtime.py
+pixi run -e dev-all-gpu pytest flowlet/tests/test_runtime.py -q
+```
+
+Result:
+
+```text
+All checks passed.
+18 passed.
+```
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.
