@@ -206,9 +206,9 @@ artifacts itself.
 - `RuntimeDirectoryManager` guarded create/continue/rerun operations. Reset
   keeps its lock and durable marker under `.control`, stages old contents, and
   completes an interrupted initialization on the next open.
-- The reference executor propagates `execution_id`, records attempts for
-  ordinary process starts as well as recovery, reuses unchanged process specs
-  on continue, and writes durable process/projection materializations.
+- The reference executor propagates `execution_id`, records ordinary and
+  recovery attempts through the same atomic reporter, reuses unchanged process
+  specs on continue, and writes durable process/projection materializations.
 - Standard execution lifecycle event vocabulary.
 - Incremental projection application with deterministic full-rebuild fallback.
 - Event-only ledger rebuild and transactional materialization replacement.
@@ -229,7 +229,7 @@ attempt ordinals. Flowlet runtime tests pass at 82 tests.
 
 1. Finish execution-wave orchestration and fault injection around recovery
    dispatch.
-2. Finish MetaMSTools study finalization and public continuation entrypoints.
+2. Finish MetaMSTools public continuation and rerun entrypoints.
 3. Switch package standard readers to the durable store, retain declared
    legacy adapters, and run crash-injection plus real-workspace acceptance.
 
@@ -238,8 +238,10 @@ store as canonical source, while `events.runtime.jsonl` remains an export for
 legacy SSE readers. Root execution/attempt/session lifecycle and expired lease
 reconciliation are native. Its backend can also create a continuation execution
 under the same runtime and use package artifact assessments plus the Flowlet
-selector/executor to skip valid OpenMS runs and execute missing runs. Full
-study finalization and real-workspace acceptance remain open.
+selector/executor to skip valid OpenMS runs and execute missing runs. Initial
+streaming run/study work now has native attempts, and continuation rebuilds an
+invalid study output after reusable run nodes are skipped. Public continuation
+entrypoints and real-workspace acceptance remain open.
 
 MassLib4Search annotation execution now declares its stable run/study DAG in
 Flowlet and reports package-owned serial, thread, and Ray execution through

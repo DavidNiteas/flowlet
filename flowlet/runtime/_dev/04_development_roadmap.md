@@ -496,15 +496,16 @@ for both business txn backends to execute on Flowlet rather than beside it.
 
 - Complete execution-wave orchestration around the implemented DAG
   continuation selector and cleanup enforcement.
-- Finish MetaMSTools finalization/public continuation migration.
+- Finish MetaMSTools public continuation and rerun migration.
 - Complete package rerun APIs, broader fault injection, compatibility, and
   real-workspace acceptance.
 
-MetaMSTools root lifecycle migration is in progress. Persisted jobs now create
+MetaMSTools lifecycle migration is in progress. Persisted jobs now create
 durable runtime, execution, session, and attempt records; the standard JSONL is
-a compatibility export. Run-level OpenMS continuation now preserves the
-runtime identity and creates a new execution wave; study finalization and real
-workspace acceptance remain open.
+a compatibility export. Initial streaming OpenMS run/study processes and
+continuation preserve runtime identity and use native attempts. Continuation
+also rebuilds invalid study-level outputs after skipping valid run shards.
+Public continuation entrypoints and real-workspace acceptance remain open.
 
 MassLib4Search shared annotation runtimes preserve one durable identity across
 resume jobs. Annotation run and study processes now use native Flowlet process

@@ -362,6 +362,44 @@ class RuntimeBackendExecutor:
 
     def _execute_recovery_step(self, step: RuntimeRecoveryStep) -> Any:
         process = self._get_process(step.process_id)
+        durable_store = self._durable_event_store()
+        if durable_store is not None and self.execution_id is not None:
+            reporter = RuntimeProcessAttemptReporter(
+                durable_store,
+                execution_id=self.execution_id,
+                backend_session_id=self.backend_session_id,
+            )
+            operation = {
+                RuntimeRecoveryAction.RESUME: RuntimeProcessOperation.RESUME,
+                RuntimeRecoveryAction.RETRY: RuntimeProcessOperation.RETRY,
+                RuntimeRecoveryAction.RESTART: RuntimeProcessOperation.START,
+            }[step.action]
+            attempt = reporter.start(
+                step.process_id,
+                operation=operation,
+                resumed_from_attempt_id=step.source_attempt_id,
+                checkpoint_id=(
+                    step.checkpoint.checkpoint_id
+                    if step.checkpoint is not None
+                    else None
+                ),
+                metadata={"recovery_action": step.action.value},
+            )
+            context = self._context_for(
+                process,
+                attempt_id=attempt.attempt_id,
+                checkpoint_id=attempt.checkpoint_id,
+            )
+            try:
+                result = self._dispatch_recovery_operation(process, context, step.action)
+            except Exception as exc:
+                reporter.fail(attempt.attempt_id, exc)
+                raise
+            reporter.complete(
+                attempt.attempt_id,
+                result=result if isinstance(result, dict) else {"value": result},
+            )
+            return result
         existing_attempts = self.projection().process_attempt_ids.get(step.process_id, [])
         ordinal = len(existing_attempts) + 1
         attempt_id = f"{step.process_id}:attempt:{ordinal}"
@@ -392,14 +430,7 @@ class RuntimeBackendExecutor:
             payload=attempt_payload,
         )
         try:
-            if step.action == RuntimeRecoveryAction.RESUME:
-                result = process.resume(context)
-            elif step.action == RuntimeRecoveryAction.RETRY:
-                result = process.retry(context)
-            elif step.action == RuntimeRecoveryAction.RESTART:
-                result = process.start(context)
-            else:  # pragma: no cover - guarded by plan validation
-                raise RuntimeRecoveryExecutionError(f"unsupported recovery action: {step.action}")
+            result = self._dispatch_recovery_operation(process, context, step.action)
         except Exception as exc:
             self._emit_attempt_event(
                 context,
@@ -421,6 +452,20 @@ class RuntimeBackendExecutor:
             },
         )
         return result
+
+    @staticmethod
+    def _dispatch_recovery_operation(
+        process: RuntimeProcess,
+        context: RuntimeProcessContext,
+        action: RuntimeRecoveryAction,
+    ) -> Any:
+        if action == RuntimeRecoveryAction.RESUME:
+            return process.resume(context)
+        if action == RuntimeRecoveryAction.RETRY:
+            return process.retry(context)
+        if action == RuntimeRecoveryAction.RESTART:
+            return process.start(context)
+        raise RuntimeRecoveryExecutionError(f"unsupported recovery action: {action}")
 
     def _emit_attempt_event(
         self,

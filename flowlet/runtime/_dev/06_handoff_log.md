@@ -1072,3 +1072,27 @@ Keep these in business packages:
 - Remaining work is MetaMSTools study finalization/public continuation,
   explicit package rerun APIs, broader crash injection, and the final liver
   workspace acceptance/cleanup.
+
+### Phase 11 Continued: Native MetaMS Run And Study Processes
+
+- Durable `RuntimeBackendExecutor.execute_recovery_plan()` now uses
+  `RuntimeProcessAttemptReporter` for recovery attempts as well as ordinary
+  starts. Recovery ordinal allocation is therefore transactional across store
+  instances.
+- MetaMSTools has one package-owned process-spec factory for streaming OpenMS
+  runs and study finalization. Initial execution and recovery inspect the same
+  process ids, fingerprints, dependencies, and output contracts.
+- The batch driver reports run attempt start/terminal boundaries for
+  synchronous, thread, and Ray scheduling. Ray contexts remain serializable
+  and workers never receive the durable reporter or SQLite handle.
+- `openms.study:{study_id}` owns study assembly/linking and standard study-level
+  output finalization. Continuation validates both run shards and the loadable
+  study root; missing `study_status.json` causes run skip plus study restart.
+- A continuation execution now has a new root attempt linked to the prior root
+  attempt. Planning, registration, or execution failures all terminate the
+  root attempt, execution, and command before releasing the backend lease.
+- MetaMSTools backend/recovery Ruff and 29 tests pass. The focused real OpenMS
+  regression proves initial run/study attempt 1 and study-only continuation
+  attempt 2 under the same runtime lineage.
+- Remaining work is HTTP/CLI continuation and rerun exposure, broader crash
+  injection, and final liver workspace acceptance.
