@@ -146,3 +146,58 @@ The next execution regression must use isolated runtime directories and retain
 the existing output untouched. It must record the exact commands, output paths,
 elapsed time, event counts, manifest content, and package snapshot-reader
 results in this document.
+
+## Isolated Execution Recipe
+
+Run these commands from the monorepo root. The explicit MetaMSTools output
+directory is intentionally outside the study layout: `--workdir` would force
+the normal `.metams/runtime` path and overwrite the historical runtime. The
+three source mzML files remain the real liver inputs.
+
+```bash
+workspace=data/large_files/ms_exp_datas/900_human_metabolites_db/workspace/900_human_metabolites_liver
+metams_runtime="$workspace/.metams/runtime_regression_current"
+metams_output="$workspace/.metams/regression_output_current"
+metams_config="$workspace/.metams/config/900_human_metabolites_liver_20260722_215619.toml"
+
+pixi run -e dev-all-gpu meta-ms-tools run-analysis liver_runtime_regression \
+  /mnt/data/daiql/ms_exp_datas/900_human_metabolites_db/mzml/pos/liver/Liver-1.mzML \
+  /mnt/data/daiql/ms_exp_datas/900_human_metabolites_db/mzml/pos/liver/Liver-2.mzML \
+  /mnt/data/daiql/ms_exp_datas/900_human_metabolites_db/mzml/pos/liver/Liver-3.mzML \
+  --output "$metams_output" \
+  --runtime-dir "$metams_runtime" \
+  --config-path "$metams_config" \
+  --set batch_config.worker_type=synchronous
+```
+
+For MassLib4Search, the workspace is the real study root. A unique annotation
+id preserves the existing `spec_spec_unispec_pos` result and writes the new
+annotation result into the study as required by workspace mode:
+
+```bash
+workspace=data/large_files/ms_exp_datas/900_human_metabolites_db/workspace/900_human_metabolites_liver
+annotation_id=runtime_regression_current
+mass_runtime="$workspace/.annotation/$annotation_id/runtime"
+
+pixi run -e dev-all-gpu masslib4search search annotation \
+  data/large_files/ms_exp_datas/900_human_metabolites_db/database/pos/derivative/search_db \
+  --workspace "$workspace" \
+  --config-path "$workspace/masslib4search_spec_spec_unispec_config.toml" \
+  --annotation-id "$annotation_id" \
+  --annotation-write-policy error \
+  --runtime-dir "$mass_runtime" \
+  --annotation-runtime-dir "$mass_runtime"
+```
+
+Before either command, verify that its target runtime directory and output or
+annotation id do not already exist. Do not remove an existing target as part of
+the regression procedure; choose a new suffix instead.
+
+Then validate and inspect both new runtime directories:
+
+```bash
+pixi run -e dev-all-gpu python flowlet/flowlet/runtime/_dev/validate_runtime_sidecar.py \
+  --require-sidecar --require-current-layout "$metams_runtime" "$mass_runtime"
+pixi run -e dev-all-gpu meta-ms-tools runtime-snapshot print "$metams_runtime" --format json
+pixi run -e dev-all-gpu masslib4search runtime-snapshot print "$mass_runtime" --format json
+```
