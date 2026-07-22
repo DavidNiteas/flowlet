@@ -37,6 +37,7 @@ class RuntimeBackendExecutor:
         *,
         runtime_id: str,
         execution_id: str | None = None,
+        backend_session_id: str | None = None,
         runtime_dir: str | Path | None = None,
         event_store: RuntimeEventStore | None = None,
         manager_bridge: RuntimeManagerEventBridge | None = None,
@@ -44,6 +45,7 @@ class RuntimeBackendExecutor:
     ) -> None:
         self.runtime_id = runtime_id
         self.execution_id = execution_id
+        self.backend_session_id = backend_session_id
         self.runtime_dir = Path(runtime_dir) if runtime_dir is not None else None
         self.event_store = event_store or RuntimeEventJsonlStore(
             RuntimeStore(self.runtime_dir).path(RuntimeStore(self.runtime_dir).layout.runtime_events)
@@ -87,6 +89,7 @@ class RuntimeBackendExecutor:
             "execution_key": process.spec.execution_key,
             "input_fingerprint": process.spec.input_fingerprint,
             "implementation_version": process.spec.implementation_version,
+            "backend_session_id": self.backend_session_id,
         }
         self.sync_manager_events()
         try:
@@ -260,6 +263,10 @@ class RuntimeBackendExecutor:
 
     def projection(self) -> RuntimeProjection:
         """Return the current framework projection."""
+        if isinstance(self.event_store, RuntimeDurableStore):
+            return self.event_store.refresh_projection(
+                RuntimeFrameworkReducer(policy=self.projection_policy)
+            )
         return RuntimeFrameworkReducer(policy=self.projection_policy).reduce(self.event_store.list())
 
     def sync_manager_events(self) -> list[Any]:
@@ -271,11 +278,6 @@ class RuntimeBackendExecutor:
     def write_projection(self) -> RuntimeProjection:
         """Persist and return the current framework projection."""
         projection = self.projection()
-        if isinstance(self.event_store, RuntimeDurableStore):
-            self.event_store.write_projection(
-                projection,
-                through_sequence=self.event_store.last_event_sequence(),
-            )
         if self.runtime_dir is not None:
             RuntimeStore(self.runtime_dir).write_projection(projection.model_dump(mode="json"))
         return projection
@@ -330,6 +332,7 @@ class RuntimeBackendExecutor:
             "execution_key": process.spec.execution_key,
             "input_fingerprint": process.spec.input_fingerprint,
             "implementation_version": process.spec.implementation_version,
+            "backend_session_id": self.backend_session_id,
         }
         if step.source_attempt_id is not None:
             attempt_payload["resumed_from_attempt_id"] = step.source_attempt_id

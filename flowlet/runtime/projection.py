@@ -26,6 +26,7 @@ class RuntimeProjection(BaseModel):
     status: RuntimeEventStatus | str = RuntimeEventStatus.PENDING
     status_class: RuntimeStatusClass = RuntimeStatusClass.NOT_STARTED
     updated_at: float | None = None
+    event_processes: dict[str, RuntimeProcessState] = Field(default_factory=dict)
     processes: dict[str, RuntimeProcessState] = Field(default_factory=dict)
     attempts: dict[str, RuntimeProcessAttempt] = Field(default_factory=dict)
     process_attempt_ids: dict[str, list[str]] = Field(default_factory=dict)
@@ -40,6 +41,7 @@ class RuntimeProjection(BaseModel):
     progress_summary: dict[str, RuntimeProgress] = Field(default_factory=dict)
     resource_usage_summary: dict[str, RuntimeResourceUsage] = Field(default_factory=dict)
     event_count: int = 0
+    last_event_sequence: int = -1
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -68,17 +70,42 @@ class RuntimeFrameworkReducer:
         """Reduce a list of standard events into framework state."""
         ordered_events = sorted(events, key=_event_sort_key)
         runtime_id = ordered_events[0].runtime_id if ordered_events else "runtime"
-        projection = RuntimeProjection(runtime_id=runtime_id, event_count=len(ordered_events))
+        projection = RuntimeProjection(runtime_id=runtime_id)
+        return self._apply(projection, ordered_events, enforce_runtime_id=False)
+
+    def apply(self, projection: RuntimeProjection, events: list[RuntimeEvent]) -> RuntimeProjection:
+        """Apply events after a persisted cursor and rederive framework aggregates."""
+        return self._apply(projection, events, enforce_runtime_id=True)
+
+    def _apply(
+        self,
+        projection: RuntimeProjection,
+        events: list[RuntimeEvent],
+        *,
+        enforce_runtime_id: bool,
+    ) -> RuntimeProjection:
+        if projection.event_count and projection.processes and not projection.event_processes:
+            raise ValueError("Persisted projection predates incremental process state; perform a full rebuild")
+        updated = projection.model_copy(deep=True)
+        ordered_events = sorted(events, key=_event_sort_key)
         for event in ordered_events:
-            projection.runtime_id = event.runtime_id
-            projection.updated_at = event.timestamp
-            _apply_attempt_event(projection, event)
-            _apply_checkpoint_event(projection, event)
-            _apply_process_event(projection, event)
-            _apply_runtime_event(projection, event)
-            _apply_indexes(projection, event)
-        _finalize_projection(projection, self.policy)
-        return projection
+            if enforce_runtime_id and updated.event_count and event.runtime_id != updated.runtime_id:
+                raise ValueError("RuntimeEvent runtime_id changed within one projection")
+            sequence = _event_sequence(event)
+            if sequence is not None and sequence <= updated.last_event_sequence:
+                raise ValueError("Incremental RuntimeEvent sequence must advance the projection cursor")
+            updated.runtime_id = event.runtime_id
+            updated.updated_at = event.timestamp
+            updated.event_count += 1
+            if sequence is not None:
+                updated.last_event_sequence = sequence
+            _apply_attempt_event(updated, event)
+            _apply_checkpoint_event(updated, event)
+            _apply_process_event(updated, event)
+            _apply_runtime_event(updated, event)
+            _apply_indexes(updated, event)
+        _finalize_projection(updated, self.policy)
+        return updated
 
 
 def runtime_projection_payload(
@@ -103,7 +130,7 @@ def load_runtime_projection(path: str | Path) -> RuntimeProjection | None:
 def _apply_process_event(projection: RuntimeProjection, event: RuntimeEvent) -> None:
     if event.process_id is None:
         return
-    state = projection.processes.get(event.process_id)
+    state = projection.event_processes.get(event.process_id)
     if state is None:
         state = RuntimeProcessState(
             process_id=event.process_id,
@@ -149,7 +176,7 @@ def _apply_process_event(projection: RuntimeProjection, event: RuntimeEvent) -> 
         result = event.payload["result"]
         update["result"] = result if isinstance(result, dict) else {"value": result}
     state = state.model_copy(update=update)
-    projection.processes[event.process_id] = state
+    projection.event_processes[event.process_id] = state
 
 
 _ATTEMPT_EVENT_STATE: dict[str, tuple[RuntimeEventStatus, RuntimeStatusClass]] = {
@@ -173,6 +200,10 @@ _ATTEMPT_EVENT_STATE: dict[str, tuple[RuntimeEventStatus, RuntimeStatusClass]] =
         RuntimeEventStatus.CANCELLED,
         RuntimeStatusClass.TERMINAL_CANCELLED,
     ),
+    RuntimeEventType.PROCESS_ATTEMPT_INTERRUPTED: (
+        RuntimeEventStatus.INTERRUPTED,
+        RuntimeStatusClass.TERMINAL_FAILURE,
+    ),
 }
 
 
@@ -194,6 +225,7 @@ def _apply_attempt_event(projection: RuntimeProjection, event: RuntimeEvent) -> 
             execution_key=event.payload.get("execution_key"),
             input_fingerprint=event.payload.get("input_fingerprint"),
             implementation_version=event.payload.get("implementation_version"),
+            backend_session_id=event.payload.get("backend_session_id"),
             first_event_sequence=_event_sequence(event),
         )
     update: dict[str, Any] = {
@@ -289,6 +321,10 @@ def _resource_usage_from_event(event: RuntimeEvent) -> RuntimeResourceUsage | No
 
 
 def _finalize_projection(projection: RuntimeProjection, policy: RuntimeProjectionPolicy) -> None:
+    projection.processes = {
+        process_id: state.model_copy(deep=True)
+        for process_id, state in projection.event_processes.items()
+    }
     if policy.propagate_child_failure or policy.propagate_child_cancelled:
         _propagate_child_terminal_state(projection, policy)
     projection.active_process_ids = sorted(
@@ -382,7 +418,7 @@ def _event_sort_key(event: RuntimeEvent) -> tuple[int, float, int, str]:
 
 
 def _event_sequence(event: RuntimeEvent) -> int | None:
-    value = event.sequence if event.sequence is not None else event.event_id
+    value = event.sequence
     try:
         return int(value)
     except (TypeError, ValueError):

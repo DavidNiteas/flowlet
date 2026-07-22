@@ -27,7 +27,7 @@ from .events import EventBuffer, sse_encode_event
 from .executor import RuntimeBackendExecutor
 from .identity import RuntimeExecutionKind, RuntimeExecutionRecord, RuntimeExecutionStatus, RuntimeIdentity
 from .info import RuntimeFileLayout, RuntimeInfo, runtime_info_payload
-from .ledger import RuntimeExecutionLedger
+from .ledger import RuntimeExecutionLedger, RuntimeExecutionLedgerReducer
 from .manager_bridge import RuntimeManagerEventBridge
 from .process import (
     RuntimeCheckpointMode,
@@ -78,6 +78,13 @@ from .schema import (
     RuntimeStatusClass,
     runtime_event_payload,
 )
+from .session import (
+    RuntimeBackendSession,
+    RuntimeBackendSessionStatus,
+    RuntimeLeaseConflictError,
+    RuntimeLeaseLostError,
+    RuntimeSessionReconciliation,
+)
 from .sidecar import RuntimeEventSidecarWriter
 from .snapshot import RuntimeObservation, RuntimeSnapshotLoader, RuntimeSnapshotView, load_runtime_observation
 from .store import RuntimeStore, write_json
@@ -109,7 +116,12 @@ __all__ = [
     "RuntimeDurableStore",
     "RuntimeDirectoryManager",
     "RuntimeBackendExecutor",
+    "RuntimeBackendSession",
+    "RuntimeBackendSessionStatus",
     "RuntimeManagerEventBridge",
+    "RuntimeLeaseConflictError",
+    "RuntimeLeaseLostError",
+    "RuntimeSessionReconciliation",
     "RuntimeFrameworkReducer",
     "RuntimeIdentity",
     "RuntimeIdentityMismatchError",
@@ -118,6 +130,7 @@ __all__ = [
     "RuntimeManagerBundle",
     "RuntimeExecutionKind",
     "RuntimeExecutionLedger",
+    "RuntimeExecutionLedgerReducer",
     "RuntimeExecutionRecord",
     "RuntimeExecutionStatus",
     "RuntimeObservation",

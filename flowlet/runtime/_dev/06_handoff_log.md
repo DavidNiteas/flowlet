@@ -939,3 +939,22 @@ Keep these in business packages:
 - Neither txn backend uses the durable store yet. Runtime leases,
   interrupted-attempt reconciliation, incremental reducer integration, and
   package migration remain required before Phase 11 completion.
+
+### Phase 11 Continued: Projection, Ledger, And Session Ownership
+
+- Durable projections now apply only events after their stored sequence cursor.
+  Direct process event state is separate from parent/child-derived state, so
+  later continuation events correctly remove stale propagated failures.
+- `RuntimeExecutionLedgerReducer` rebuilds execution and attempt indexes only
+  from canonical events. Deleted materialized tables can be transactionally
+  replaced, while malformed execution histories are rejected.
+- `RuntimeBackendSession` adds exclusive renewable runtime ownership. Acquire,
+  renew, expire, and release are represented by durable standard events.
+- Expired-session takeover appends interruption events for abandoned
+  nonterminal attempts and execution waves. Reconciliation is idempotent and
+  does not choose package retry/resume policy.
+- The reference executor now records backend session ownership on attempts.
+- Flowlet Ruff passes and `tests/test_runtime.py` passes at 72 tests. Targeted
+  MetaMSTools backend/recovery tests pass at 26 and MassLib4Search at 21.
+- Next work is durable command idempotency, DAG continuation selection and its
+  cleanup gate, then native package backend migration.

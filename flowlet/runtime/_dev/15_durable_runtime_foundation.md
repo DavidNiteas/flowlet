@@ -3,9 +3,10 @@
 ## Status
 
 Phase 11 in progress. Stable identity contracts, the first transactional
-event/ledger store, recoverable runtime-directory reset, and native executor
-attempt recording are implemented. Interrupted-attempt reconciliation,
-incremental reducer integration, and business backend migration remain open.
+event/ledger store, recoverable runtime-directory reset, incremental
+projections, rebuildable ledgers, backend-session leases, and interrupted-work
+reconciliation are implemented. DAG continuation, command idempotency, and
+business backend migration remain open.
 
 ## Objective
 
@@ -108,9 +109,11 @@ WAL and `BEGIN IMMEDIATE` to serialize local appenders. In one transaction it:
 - Stores the complete `RuntimeEvent` envelope.
 - Updates execution and process-attempt ledger rows.
 
-The baseline also stores process declarations and an incremental projection
-cursor. A projection can load only events after `through_sequence`; it remains
-fully rebuildable from events.
+The store also keeps process declarations and an incremental projection
+cursor. `refresh_projection()` applies only events after `through_sequence`.
+Direct event-derived process state is retained separately from propagated
+parent presentation state, so a continued child success removes an earlier
+derived parent failure. Old projection formats trigger a full rebuild.
 
 The SQLite store assumes a local runtime backend is the writer authority.
 Distributed workers report events to that authority; they do not concurrently
@@ -137,6 +140,25 @@ Appending an attempt event and changing its ledger row occur in one database
 transaction. Future reconciliation must be expressible as new events and must
 be able to rebuild the same ledger from an empty materialization.
 
+`RuntimeExecutionLedgerReducer` now rebuilds executions and attempts only from
+canonical events. `rebuild_ledger(replace=True)` transactionally replaces
+deleted or damaged materialized rows. Missing and duplicate
+`execution.created` facts are rejected instead of inferred.
+
+## Backend Session Lease And Reconciliation
+
+`RuntimeBackendSession` is an exclusive runtime coordination lease. Its
+identity is an attachment, never the runtime or logical task identity. Acquire,
+renew, release, and expiration append standard events in the same transaction
+that changes the operational lease row. SQLite serializes concurrent
+acquisition, and an unexpired owner prevents takeover.
+
+After an expired lease is replaced, `reconcile_interrupted_work()` appends
+`process.attempt.interrupted` and `execution.interrupted` for nonterminal work
+owned by prior sessions. It does not turn backend loss into a business failure,
+select retry/resume, or validate artifacts. Reconciliation is idempotent: once
+the stale records are terminal, another call appends nothing.
+
 ## Implemented Baseline
 
 - `RuntimeIdentity`, `RuntimeExecutionKind`, `RuntimeExecutionStatus`, and
@@ -154,25 +176,27 @@ be able to rebuild the same ledger from an empty materialization.
   ordinary process starts as well as recovery, reuses unchanged process specs
   on continue, and writes durable process/projection materializations.
 - Standard execution lifecycle event vocabulary.
+- Incremental projection application with deterministic full-rebuild fallback.
+- Event-only ledger rebuild and transactional materialization replacement.
+- Exclusive backend-session leases with atomic stale-owner takeover.
+- Append-only, idempotent interrupted execution/attempt reconciliation.
 
 Current tests prove four store instances append 40 unique events with canonical
 sequences `0..39`, a reopened store preserves identity and ledger state,
 continue creates execution ordinal 2 under the same runtime, identity mismatch
-is rejected, and projection reads can begin after the persisted cursor.
+is rejected, and projection reads can begin after the persisted cursor. Lease
+tests prove one winner among four concurrent acquirers and deterministic stale
+session reconciliation. Flowlet runtime tests pass at 72 tests.
 
 ## Remaining Phases
 
-1. Add backend-session leases around the implemented directory reset lock.
-2. Add incremental projection application and deterministic ledger rebuild
-   verification.
-3. Add backend-session leases, interrupted-attempt reconciliation, and command
-   idempotency.
-4. Add generic DAG continuation selection and enforce cleanup requirements.
-5. Refactor the reference executor around execution waves and the durable
+1. Add durable command idempotency and bind rerun reset to the live lease.
+2. Add generic DAG continuation selection and enforce cleanup requirements.
+3. Refactor the reference executor around execution waves and the durable
    store.
-6. Migrate MetaMSTools txn root and OpenMS run processes.
-7. Migrate MassLib4Search annotation runtime, run processes, and study process.
-8. Switch package standard readers to the durable store, retain declared
+4. Migrate MetaMSTools txn root and OpenMS run processes.
+5. Migrate MassLib4Search annotation runtime, run processes, and study process.
+6. Switch package standard readers to the durable store, retain declared
    legacy adapters, and run crash-injection plus real-workspace acceptance.
 
 ## Acceptance

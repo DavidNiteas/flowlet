@@ -486,13 +486,12 @@ for both business txn backends to execute on Flowlet rather than beside it.
 - The reference executor records normal process attempts under an execution
   wave and does not redeclare an unchanged process during continue.
 - Concurrent-store, reopen, identity mismatch, continuation, attempt ledger,
-  and incremental cursor tests pass.
+  incremental projection, ledger rebuild, exclusive lease, and interrupted
+  reconciliation tests pass.
 
 ### Remaining Work
 
-- Runtime leases around the implemented directory reset lock.
-- Interrupted-attempt reconciliation and idempotent commands.
-- Incremental projection reducer and rebuild audit.
+- Durable idempotent commands and live-lease-aware directory reset.
 - DAG continuation executor and cleanup enforcement.
 - MetaMSTools and MassLib4Search txn migration.
 - Fault injection, compatibility, and real-workspace acceptance.

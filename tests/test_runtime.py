@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 from flowlet.runtime import (
     EventBuffer,
     RuntimeBackendExecutor,
+    RuntimeBackendSessionStatus,
     RuntimeCheckpointMode,
     RuntimeCheckpointPolicy,
     RuntimeCheckpointRef,
@@ -22,12 +24,15 @@ from flowlet.runtime import (
     RuntimeEventStatus,
     RuntimeEventType,
     RuntimeExecutionKind,
+    RuntimeExecutionLedgerReducer,
     RuntimeExecutionStatus,
     RuntimeFrameworkReducer,
     RuntimeIdempotency,
     RuntimeIdentity,
     RuntimeIdentityMismatchError,
     RuntimeInfo,
+    RuntimeLeaseConflictError,
+    RuntimeLeaseLostError,
     RuntimeManagerBundle,
     RuntimeManagerEventBridge,
     RuntimeObservation,
@@ -182,6 +187,145 @@ def test_durable_runtime_store_allocates_unique_sequences_across_writers(tmp_pat
     assert [event.sequence for event in events] == list(range(40))
 
 
+def test_durable_runtime_store_backend_session_lease_takeover(tmp_path):
+    database_path = tmp_path / "runtime.db"
+    store = RuntimeDurableStore.create(
+        database_path,
+        RuntimeIdentity(runtime_id="runtime-1", created_at=1.0),
+    )
+    first = store.acquire_backend_session(
+        session_id="session-1", owner_id="backend-1", now=2.0, ttl=10.0
+    )
+
+    assert first.status == RuntimeBackendSessionStatus.ACTIVE
+    assert store.active_backend_session(now=3.0) == first
+    with pytest.raises(RuntimeLeaseConflictError):
+        RuntimeDurableStore(database_path).acquire_backend_session(
+            session_id="session-2", owner_id="backend-2", now=3.0, ttl=10.0
+        )
+    renewed = store.renew_backend_session(
+        "session-1", owner_id="backend-1", now=4.0, ttl=10.0
+    )
+    assert renewed.expires_at == 14.0
+
+    second = RuntimeDurableStore(database_path).acquire_backend_session(
+        session_id="session-2", owner_id="backend-2", now=15.0, ttl=10.0
+    )
+    assert second.status == RuntimeBackendSessionStatus.ACTIVE
+    assert [session.status for session in store.backend_sessions()] == [
+        RuntimeBackendSessionStatus.EXPIRED,
+        RuntimeBackendSessionStatus.ACTIVE,
+    ]
+    with pytest.raises(RuntimeLeaseLostError):
+        store.renew_backend_session("session-1", owner_id="backend-1", now=16.0, ttl=10.0)
+
+    released = store.release_backend_session(
+        "session-2", owner_id="backend-2", now=17.0
+    )
+    assert released.status == RuntimeBackendSessionStatus.RELEASED
+    assert store.active_backend_session(now=17.0) is None
+    assert [event.event_type for event in store.list()] == [
+        RuntimeEventType.BACKEND_SESSION_ACQUIRED,
+        RuntimeEventType.BACKEND_SESSION_RENEWED,
+        RuntimeEventType.BACKEND_SESSION_EXPIRED,
+        RuntimeEventType.BACKEND_SESSION_ACQUIRED,
+        RuntimeEventType.BACKEND_SESSION_RELEASED,
+    ]
+
+
+def test_durable_runtime_store_serializes_backend_session_acquisition(tmp_path):
+    database_path = tmp_path / "runtime.db"
+    RuntimeDurableStore.create(
+        database_path,
+        RuntimeIdentity(runtime_id="runtime-1", created_at=1.0),
+    )
+
+    def acquire(index: int) -> str:
+        writer = RuntimeDurableStore(database_path)
+        try:
+            writer.acquire_backend_session(
+                session_id=f"session-{index}",
+                owner_id=f"backend-{index}",
+                now=2.0,
+                ttl=10.0,
+            )
+        except RuntimeLeaseConflictError:
+            return "conflict"
+        return "acquired"
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(acquire, range(4)))
+
+    assert results.count("acquired") == 1
+    assert results.count("conflict") == 3
+
+
+def test_backend_session_takeover_reconciles_interrupted_work_once(tmp_path):
+    store = RuntimeDurableStore.create(
+        tmp_path / "runtime.db",
+        RuntimeIdentity(runtime_id="runtime-1", created_at=1.0),
+    )
+    store.acquire_backend_session(
+        session_id="session-1", owner_id="backend-1", now=2.0, ttl=5.0
+    )
+    store.begin_execution(
+        execution_id="execution-1",
+        kind=RuntimeExecutionKind.INITIAL,
+        created_at=3.0,
+        backend_session_id="session-1",
+    )
+    store.transition_execution("execution-1", RuntimeExecutionStatus.RUNNING, timestamp=4.0)
+    for event_type, status, status_class in [
+        (
+            RuntimeEventType.PROCESS_ATTEMPT_CREATED,
+            RuntimeEventStatus.PENDING,
+            RuntimeStatusClass.NOT_STARTED,
+        ),
+        (
+            RuntimeEventType.PROCESS_ATTEMPT_STARTED,
+            RuntimeEventStatus.RUNNING,
+            RuntimeStatusClass.ACTIVE,
+        ),
+    ]:
+        store.append(
+            RuntimeEvent(
+                event_id=-1,
+                runtime_id="runtime-1",
+                execution_id="execution-1",
+                process_id="process-1",
+                attempt_id="attempt-1",
+                event_type=event_type,
+                timestamp=5.0,
+                status=status,
+                status_class=status_class,
+                payload={"ordinal": 1, "backend_session_id": "session-1"},
+            )
+        )
+
+    store.acquire_backend_session(
+        session_id="session-2", owner_id="backend-2", now=8.0, ttl=5.0
+    )
+    before = store.last_event_sequence()
+    reconciliation = store.reconcile_interrupted_work(
+        "session-2", owner_id="backend-2", now=8.5
+    )
+
+    assert reconciliation.interrupted_execution_ids == ["execution-1"]
+    assert reconciliation.interrupted_attempt_ids == ["attempt-1"]
+    assert reconciliation.first_event_sequence == before + 1
+    ledger = store.ledger()
+    assert ledger.executions["execution-1"].status == RuntimeExecutionStatus.INTERRUPTED
+    assert ledger.attempts["attempt-1"].status == RuntimeEventStatus.INTERRUPTED
+    assert ledger.attempts["attempt-1"].error.type == "BackendSessionLost"
+    assert store.rebuild_ledger() == ledger
+
+    after = store.last_event_sequence()
+    repeated = store.reconcile_interrupted_work("session-2", owner_id="backend-2", now=9.0)
+    assert repeated.interrupted_execution_ids == []
+    assert repeated.interrupted_attempt_ids == []
+    assert store.last_event_sequence() == after
+
+
 def test_durable_runtime_store_materializes_attempts_and_projection_cursor(tmp_path):
     store = RuntimeDurableStore.create(
         tmp_path / "runtime.db",
@@ -247,6 +391,48 @@ def test_durable_runtime_store_materializes_attempts_and_projection_cursor(tmp_p
     assert through_sequence == 3
     assert [event.event_id for event in store.events_after_projection()] == [4]
     assert store.ledger().projection_sequence == 3
+
+    expected_ledger = store.ledger()
+    assert store.rebuild_ledger() == expected_ledger
+
+    with sqlite3.connect(store.database_path) as connection:
+        connection.execute("DELETE FROM runtime_attempts")
+        connection.execute("DELETE FROM runtime_executions")
+    assert store.ledger().attempts == {}
+    assert store.ledger().executions == {}
+
+    assert store.rebuild_ledger(replace=True) == expected_ledger
+    reopened = RuntimeDurableStore(store.database_path, expected_runtime_id="runtime-1")
+    assert reopened.ledger() == expected_ledger
+
+
+def test_execution_ledger_rebuild_rejects_invalid_execution_history():
+    identity = RuntimeIdentity(runtime_id="runtime-1", created_at=1.0)
+    reducer = RuntimeExecutionLedgerReducer()
+    started = RuntimeEvent(
+        event_id=0,
+        sequence=0,
+        runtime_id="runtime-1",
+        execution_id="execution-1",
+        event_type=RuntimeEventType.EXECUTION_STARTED,
+        timestamp=2.0,
+    )
+
+    with pytest.raises(ValueError, match="precedes declaration"):
+        reducer.reduce(identity, [started])
+
+    created = RuntimeEvent(
+        event_id=0,
+        sequence=0,
+        runtime_id="runtime-1",
+        execution_id="execution-1",
+        event_type=RuntimeEventType.EXECUTION_CREATED,
+        timestamp=1.0,
+        payload={"kind": "initial", "ordinal": 1},
+    )
+    duplicate = created.model_copy(update={"event_id": 1, "sequence": 1})
+    with pytest.raises(ValueError, match="Duplicate execution.created"):
+        reducer.reduce(identity, [created, duplicate])
 
 
 def test_runtime_directory_manager_rerun_replaces_lineage_and_recovers_interrupted_reset(
@@ -1441,6 +1627,82 @@ def test_runtime_framework_reducer_prefers_durable_sequence_over_worker_clock():
     projection = RuntimeFrameworkReducer().reduce(events)
 
     assert projection.processes["process-1"].status == RuntimeEventStatus.SUCCEEDED
+
+
+def test_runtime_framework_reducer_incrementally_rederives_parent_propagation():
+    reducer = RuntimeFrameworkReducer()
+    initial = [
+        RuntimeEvent(
+            event_id=0,
+            sequence=0,
+            runtime_id="runtime-1",
+            process_id="parent",
+            event_type=RuntimeEventType.PROCESS_STATUS_CHANGED,
+            timestamp=1.0,
+            status=RuntimeEventStatus.RUNNING,
+            status_class=RuntimeStatusClass.ACTIVE,
+        ),
+        RuntimeEvent(
+            event_id=1,
+            sequence=1,
+            runtime_id="runtime-1",
+            process_id="child",
+            parent_process_id="parent",
+            event_type=RuntimeEventType.PROCESS_FAILED,
+            timestamp=2.0,
+            status=RuntimeEventStatus.FAILED,
+            status_class=RuntimeStatusClass.TERMINAL_FAILURE,
+        ),
+    ]
+    projection = reducer.reduce(initial)
+
+    assert projection.processes["parent"].status == RuntimeEventStatus.FAILED
+    assert projection.event_processes["parent"].status == RuntimeEventStatus.RUNNING
+
+    continued = reducer.apply(
+        projection,
+        [
+            RuntimeEvent(
+                event_id=2,
+                sequence=2,
+                runtime_id="runtime-1",
+                process_id="child",
+                parent_process_id="parent",
+                event_type=RuntimeEventType.PROCESS_COMPLETED,
+                timestamp=3.0,
+                status=RuntimeEventStatus.SUCCEEDED,
+                status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+            )
+        ],
+    )
+
+    assert continued.processes["child"].status == RuntimeEventStatus.SUCCEEDED
+    assert continued.processes["parent"].status == RuntimeEventStatus.RUNNING
+    assert continued.last_event_sequence == 2
+    assert continued.event_count == 3
+
+
+def test_runtime_framework_reducer_only_enforces_identity_for_incremental_state():
+    reducer = RuntimeFrameworkReducer()
+    first = RuntimeEvent(
+        event_id=0,
+        runtime_id="legacy-job-1",
+        event_type=RuntimeEventType.LOG_EMITTED,
+        timestamp=1.0,
+    )
+    second = RuntimeEvent(
+        event_id=1,
+        runtime_id="legacy-job-2",
+        event_type=RuntimeEventType.LOG_EMITTED,
+        timestamp=2.0,
+    )
+
+    legacy_projection = reducer.reduce([first, second])
+    assert legacy_projection.runtime_id == "legacy-job-2"
+
+    durable_projection = reducer.reduce([first])
+    with pytest.raises(ValueError, match="runtime_id changed"):
+        reducer.apply(durable_projection, [second])
 
 
 def test_runtime_backend_executor_reports_failure_and_cancel(tmp_path):

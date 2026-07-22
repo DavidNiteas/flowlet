@@ -15,11 +15,18 @@ from .identity import (
     RuntimeExecutionStatus,
     RuntimeIdentity,
 )
-from .ledger import RuntimeExecutionLedger
+from .ledger import RuntimeExecutionLedger, RuntimeExecutionLedgerReducer
 from .process import RuntimeProcessOperation, RuntimeProcessSpec
-from .projection import RuntimeProjection
+from .projection import RuntimeFrameworkReducer, RuntimeProjection
 from .recovery import RuntimeProcessAttempt
 from .schema import RuntimeErrorInfo, RuntimeEvent, RuntimeEventStatus, RuntimeEventType, RuntimeStatusClass
+from .session import (
+    RuntimeBackendSession,
+    RuntimeBackendSessionStatus,
+    RuntimeLeaseConflictError,
+    RuntimeLeaseLostError,
+    RuntimeSessionReconciliation,
+)
 
 
 class RuntimeIdentityMismatchError(ValueError):
@@ -73,6 +80,210 @@ class RuntimeDurableStore:
         with self._connect() as connection:
             row = connection.execute("SELECT value FROM runtime_meta WHERE key = 'identity'").fetchone()
         return RuntimeIdentity.model_validate_json(row[0]) if row is not None else None
+
+    def acquire_backend_session(
+        self,
+        *,
+        session_id: str,
+        owner_id: str,
+        now: float,
+        ttl: float,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeBackendSession:
+        """Acquire exclusive ownership, expiring a stale owner atomically."""
+        if ttl <= 0:
+            raise ValueError("backend session ttl must be > 0")
+        identity = self._require_identity()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            active = self._load_active_session_tx(connection)
+            if active is not None and active.expires_at > now:
+                connection.rollback()
+                raise RuntimeLeaseConflictError(
+                    f"Runtime is owned by live backend session {active.session_id!r}"
+                )
+            if active is not None:
+                expired = active.model_copy(
+                    update={"status": RuntimeBackendSessionStatus.EXPIRED, "released_at": now}
+                )
+                self._write_session_tx(connection, expired)
+                self._append_session_event_tx(
+                    connection, expired, RuntimeEventType.BACKEND_SESSION_EXPIRED, now
+                )
+            if self._load_session_tx(connection, session_id) is not None:
+                connection.rollback()
+                raise ValueError(f"Duplicate backend session_id: {session_id!r}")
+            session = RuntimeBackendSession(
+                session_id=session_id,
+                runtime_id=identity.runtime_id,
+                owner_id=owner_id,
+                acquired_at=now,
+                heartbeat_at=now,
+                expires_at=now + ttl,
+                metadata=metadata or {},
+            )
+            self._write_session_tx(connection, session)
+            self._append_session_event_tx(
+                connection, session, RuntimeEventType.BACKEND_SESSION_ACQUIRED, now
+            )
+            connection.commit()
+        self._notify_changed()
+        return session
+
+    def renew_backend_session(
+        self, session_id: str, *, owner_id: str, now: float, ttl: float
+    ) -> RuntimeBackendSession:
+        """Renew the current owner lease, rejecting expired or replaced sessions."""
+        if ttl <= 0:
+            raise ValueError("backend session ttl must be > 0")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            session = self._require_live_session_tx(connection, session_id, owner_id, now)
+            session = session.model_copy(update={"heartbeat_at": now, "expires_at": now + ttl})
+            self._write_session_tx(connection, session)
+            self._append_session_event_tx(
+                connection, session, RuntimeEventType.BACKEND_SESSION_RENEWED, now
+            )
+            connection.commit()
+        self._notify_changed()
+        return session
+
+    def release_backend_session(
+        self, session_id: str, *, owner_id: str, now: float
+    ) -> RuntimeBackendSession:
+        """Release the current lease and retain its durable session history."""
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            session = self._require_live_session_tx(connection, session_id, owner_id, now)
+            session = session.model_copy(
+                update={"status": RuntimeBackendSessionStatus.RELEASED, "released_at": now}
+            )
+            self._write_session_tx(connection, session)
+            self._append_session_event_tx(
+                connection, session, RuntimeEventType.BACKEND_SESSION_RELEASED, now
+            )
+            connection.commit()
+        self._notify_changed()
+        return session
+
+    def backend_sessions(self) -> list[RuntimeBackendSession]:
+        """Return backend attachment history in acquisition order."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT session_json FROM runtime_backend_sessions ORDER BY acquired_at, session_id"
+            ).fetchall()
+        return [RuntimeBackendSession.model_validate_json(row[0]) for row in rows]
+
+    def active_backend_session(self, *, now: float) -> RuntimeBackendSession | None:
+        """Return the current live owner without mutating an expired lease."""
+        with self._connect() as connection:
+            session = self._load_active_session_tx(connection)
+        return session if session is not None and session.expires_at > now else None
+
+    def reconcile_interrupted_work(
+        self, session_id: str, *, owner_id: str, now: float
+    ) -> RuntimeSessionReconciliation:
+        """Append interruption facts for nonterminal work abandoned by old sessions."""
+        error = RuntimeErrorInfo(
+            type="BackendSessionLost",
+            message="The backend session that owned this work is no longer live",
+            retryable=True,
+            context={"reconciled_by_session_id": session_id},
+        )
+        event_sequences: list[int] = []
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._require_live_session_tx(connection, session_id, owner_id, now)
+            execution_rows = connection.execute(
+                "SELECT record_json FROM runtime_executions ORDER BY ordinal"
+            ).fetchall()
+            executions = [
+                RuntimeExecutionRecord.model_validate_json(row[0]) for row in execution_rows
+            ]
+            stale_executions = [
+                execution
+                for execution in executions
+                if execution.status
+                in {RuntimeExecutionStatus.PENDING, RuntimeExecutionStatus.RUNNING}
+                and execution.backend_session_id != session_id
+            ]
+            stale_execution_ids = {execution.execution_id for execution in stale_executions}
+            attempt_rows = connection.execute(
+                "SELECT attempt_json FROM runtime_attempts ORDER BY process_id, ordinal"
+            ).fetchall()
+            attempts = [RuntimeProcessAttempt.model_validate_json(row[0]) for row in attempt_rows]
+            stale_attempts = [
+                attempt
+                for attempt in attempts
+                if attempt.status_class
+                in {RuntimeStatusClass.NOT_STARTED, RuntimeStatusClass.ACTIVE}
+                and (
+                    attempt.execution_id in stale_execution_ids
+                    or (
+                        attempt.backend_session_id is not None
+                        and attempt.backend_session_id != session_id
+                    )
+                )
+            ]
+            for attempt in stale_attempts:
+                event = self._append_event_tx(
+                    connection,
+                    RuntimeEvent(
+                        event_id=-1,
+                        runtime_id=attempt.runtime_id,
+                        execution_id=attempt.execution_id,
+                        process_id=attempt.process_id,
+                        attempt_id=attempt.attempt_id,
+                        event_type=RuntimeEventType.PROCESS_ATTEMPT_INTERRUPTED,
+                        timestamp=now,
+                        status=RuntimeEventStatus.INTERRUPTED,
+                        status_class=RuntimeStatusClass.TERMINAL_FAILURE,
+                        error=error,
+                        payload={
+                            "ordinal": attempt.ordinal,
+                            "backend_session_id": attempt.backend_session_id,
+                            "reconciled_by_session_id": session_id,
+                        },
+                    ),
+                )
+                event_sequences.append(int(event.event_id))
+            for execution in stale_executions:
+                event = self._append_event_tx(
+                    connection,
+                    RuntimeEvent(
+                        event_id=-1,
+                        runtime_id=execution.runtime_id,
+                        execution_id=execution.execution_id,
+                        event_type=RuntimeEventType.EXECUTION_INTERRUPTED,
+                        timestamp=now,
+                        status=RuntimeExecutionStatus.INTERRUPTED,
+                        status_class=RuntimeStatusClass.TERMINAL_FAILURE,
+                        error=error,
+                        payload={"reconciled_by_session_id": session_id},
+                    ),
+                )
+                self._write_execution_tx(
+                    connection,
+                    execution.model_copy(
+                        update={
+                            "status": RuntimeExecutionStatus.INTERRUPTED,
+                            "finished_at": now,
+                            "last_event_sequence": int(event.event_id),
+                            "error": error,
+                        }
+                    ),
+                )
+                event_sequences.append(int(event.event_id))
+            connection.commit()
+        if event_sequences:
+            self._notify_changed()
+        return RuntimeSessionReconciliation(
+            session_id=session_id,
+            interrupted_execution_ids=[item.execution_id for item in stale_executions],
+            interrupted_attempt_ids=[item.attempt_id for item in stale_attempts],
+            first_event_sequence=event_sequences[0] if event_sequences else None,
+            last_event_sequence=event_sequences[-1] if event_sequences else None,
+        )
 
     def append(self, event: RuntimeEvent) -> RuntimeEvent:
         """Atomically allocate a sequence, append an event, and update ledger indexes."""
@@ -170,7 +381,12 @@ class RuntimeDurableStore:
                     timestamp=created_at,
                     status=RuntimeEventStatus.PENDING,
                     status_class=RuntimeStatusClass.NOT_STARTED,
-                    payload={"kind": kind, "ordinal": ordinal},
+                    payload={
+                        "kind": kind,
+                        "ordinal": ordinal,
+                        "backend_session_id": backend_session_id,
+                        "recovery_plan_id": recovery_plan_id,
+                    },
                     metadata=metadata or {},
                 ),
             )
@@ -292,6 +508,29 @@ class RuntimeDurableStore:
         persisted = self.load_projection()
         return self.list(since=persisted[1] if persisted is not None else None)
 
+    def refresh_projection(
+        self,
+        reducer: RuntimeFrameworkReducer | None = None,
+    ) -> RuntimeProjection:
+        """Incrementally apply durable events, rebuilding old projection formats when needed."""
+        reducer = reducer or RuntimeFrameworkReducer()
+        persisted = self.load_projection()
+        if persisted is None:
+            projection = reducer.reduce(self.list())
+        else:
+            projection, through_sequence = persisted
+            pending = self.list(since=through_sequence)
+            if not pending:
+                return projection
+            try:
+                projection = reducer.apply(projection, pending)
+            except ValueError as exc:
+                if "predates incremental process state" not in str(exc):
+                    raise
+                projection = reducer.reduce(self.list())
+        self.write_projection(projection, through_sequence=self.last_event_sequence())
+        return projection
+
     def ledger(self) -> RuntimeExecutionLedger:
         """Load the current execution and process-attempt materialization."""
         identity = self._require_identity()
@@ -319,6 +558,28 @@ class RuntimeDurableStore:
             last_event_sequence=self.last_event_sequence(),
             projection_sequence=int(projection_row[0]) if projection_row is not None else -1,
         )
+
+    def rebuild_ledger(self, *, replace: bool = False) -> RuntimeExecutionLedger:
+        """Rebuild ledger indexes from events and optionally replace materialized rows."""
+        current_projection = self.load_projection()
+        projection_sequence = current_projection[1] if current_projection is not None else -1
+        rebuilt = RuntimeExecutionLedgerReducer().reduce(
+            self._require_identity(),
+            self.list(),
+            projection_sequence=projection_sequence,
+        )
+        if not replace:
+            return rebuilt
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM runtime_executions")
+            connection.execute("DELETE FROM runtime_attempts")
+            for execution_id in rebuilt.execution_order:
+                self._write_execution_tx(connection, rebuilt.executions[execution_id])
+            for attempt in rebuilt.attempts.values():
+                self._write_attempt_tx(connection, attempt)
+            connection.commit()
+        return rebuilt
 
     def last_event_sequence(self) -> int:
         """Return the latest allocated sequence, or -1 for an empty runtime."""
@@ -406,6 +667,7 @@ class RuntimeDurableStore:
             RuntimeEventType.PROCESS_ATTEMPT_COMPLETED,
             RuntimeEventType.PROCESS_ATTEMPT_FAILED,
             RuntimeEventType.PROCESS_ATTEMPT_CANCELLED,
+            RuntimeEventType.PROCESS_ATTEMPT_INTERRUPTED,
         }:
             updates["finished_at"] = event.timestamp
         self._write_attempt_tx(connection, attempt.model_copy(update=updates))
@@ -469,6 +731,88 @@ class RuntimeDurableStore:
             ),
         )
 
+    @staticmethod
+    def _load_session_tx(
+        connection: sqlite3.Connection, session_id: str
+    ) -> RuntimeBackendSession | None:
+        row = connection.execute(
+            "SELECT session_json FROM runtime_backend_sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        return RuntimeBackendSession.model_validate_json(row[0]) if row is not None else None
+
+    @staticmethod
+    def _load_active_session_tx(connection: sqlite3.Connection) -> RuntimeBackendSession | None:
+        row = connection.execute(
+            "SELECT session_json FROM runtime_backend_sessions WHERE status = 'active'"
+        ).fetchone()
+        return RuntimeBackendSession.model_validate_json(row[0]) if row is not None else None
+
+    @staticmethod
+    def _write_session_tx(connection: sqlite3.Connection, session: RuntimeBackendSession) -> None:
+        connection.execute(
+            """
+            INSERT INTO runtime_backend_sessions(session_id, status, acquired_at, session_json)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                status = excluded.status,
+                session_json = excluded.session_json
+            """,
+            (session.session_id, session.status, session.acquired_at, session.model_dump_json()),
+        )
+
+    def _append_session_event_tx(
+        self,
+        connection: sqlite3.Connection,
+        session: RuntimeBackendSession,
+        event_type: RuntimeEventType,
+        timestamp: float,
+    ) -> RuntimeEvent:
+        return self._append_event_tx(
+            connection,
+            RuntimeEvent(
+                event_id=-1,
+                runtime_id=session.runtime_id,
+                event_type=event_type,
+                timestamp=timestamp,
+                subject_type="backend_session",
+                subject_id=session.session_id,
+                status=session.status,
+                status_class=(
+                    RuntimeStatusClass.ACTIVE
+                    if session.status == RuntimeBackendSessionStatus.ACTIVE
+                    else RuntimeStatusClass.TERMINAL_SUCCESS
+                ),
+                payload={
+                    "owner_id": session.owner_id,
+                    "heartbeat_at": session.heartbeat_at,
+                    "expires_at": session.expires_at,
+                },
+                metadata=session.metadata,
+            ),
+        )
+
+    def _require_live_session_tx(
+        self,
+        connection: sqlite3.Connection,
+        session_id: str,
+        owner_id: str,
+        now: float,
+    ) -> RuntimeBackendSession:
+        session = self._load_active_session_tx(connection)
+        if (
+            session is None
+            or session.session_id != session_id
+            or session.owner_id != owner_id
+            or session.expires_at <= now
+        ):
+            connection.rollback()
+            raise RuntimeLeaseLostError(f"Backend session lease is not live: {session_id!r}")
+        return session
+
+    def _notify_changed(self) -> None:
+        with self._changed:
+            self._changed.notify_all()
+
     def _initialize_schema(self) -> None:
         with self._connect() as connection:
             connection.executescript(
@@ -516,6 +860,14 @@ class RuntimeDurableStore:
                     through_sequence INTEGER NOT NULL,
                     projection_json TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS runtime_backend_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    acquired_at REAL NOT NULL,
+                    session_json TEXT NOT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS runtime_backend_sessions_active_idx
+                    ON runtime_backend_sessions(status) WHERE status = 'active';
                 """
             )
 
