@@ -40,7 +40,10 @@ from flowlet.runtime import (
     runtime_info_payload,
     runtime_process_spec_payload,
     runtime_projection_payload,
+    sse_encode_runtime_event,
+    stream_runtime_event_store,
     txn_event_payload_to_runtime_event,
+    wait_runtime_event_store,
 )
 
 
@@ -642,6 +645,57 @@ def test_runtime_event_jsonl_store_appends_loads_and_waits(tmp_path):
     assert stored.event_id == 1
     assert [item.event_id for item in restored.list()] == [1, 2]
     assert [item.event_type for item in restored.wait_for_next(since=1, timeout=0.01)] == ["process.completed"]
+
+
+def test_runtime_event_store_supports_string_cursor_and_standard_streaming():
+    store = RuntimeEventJsonlStore()
+    started = store.append(
+        RuntimeEvent(
+            event_id="evt-1",
+            runtime_id="runtime1",
+            process_id="process1",
+            event_type="process.status.changed",
+            timestamp=1.0,
+            status=RuntimeEventStatus.RUNNING,
+            status_class=RuntimeStatusClass.ACTIVE,
+        )
+    )
+    completed = store.append(
+        RuntimeEvent(
+            event_id="evt-2",
+            runtime_id="runtime1",
+            process_id="process1",
+            event_type="process.status.changed",
+            timestamp=2.0,
+            status=RuntimeEventStatus.SUCCEEDED,
+            status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+        )
+    )
+    trailing = store.append(
+        RuntimeEvent(
+            event_id="evt-3",
+            runtime_id="runtime1",
+            process_id="process1",
+            event_type="log.emitted",
+            timestamp=3.0,
+            message="completed",
+        )
+    )
+
+    streamed = list(
+        stream_runtime_event_store(
+            store,
+            is_terminal=lambda event: event.event_id == completed.event_id,
+        )
+    )
+
+    assert [event.event_id for event in store.list(since="evt-1")] == ["evt-2", "evt-3"]
+    assert wait_runtime_event_store(store, since="evt-2", timeout=0.01) == [trailing]
+    assert streamed == [started, completed, trailing]
+    encoded = sse_encode_runtime_event(completed)
+    assert "id: evt-2" in encoded
+    assert "event: process.status.changed" in encoded
+    assert json.loads(encoded.split("data: ", maxsplit=1)[1])['status'] == "succeeded"
 
 
 def test_runtime_store_appends_standard_runtime_event_sidecar(tmp_path):

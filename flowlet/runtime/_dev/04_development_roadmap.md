@@ -321,6 +321,8 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
   normalize the business job lifecycle while preserving their existing run,
   stage, and runtime-task monitor data.
 - A projection is used only with a valid business `JobSnapshot` or `JobRecord`.
+- `RuntimeEventStore` now supports standard numeric and string cursors, waiting,
+  streaming, and standard SSE encoding without relying on legacy `job_state`.
 
 ### Acceptance
 
@@ -331,6 +333,8 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
   lifecycle without inferring business task hierarchy.
 - Terminal projections normalize business aggregate counters from the existing
   planned-run count while preserving legacy run/stage/task detail.
+- Standard stream callers provide their own terminal predicate and can drain
+  trailing events after it matches.
 
 ## Phase 9: Legacy Cleanup
 

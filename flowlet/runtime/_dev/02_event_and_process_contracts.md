@@ -31,6 +31,23 @@ schema_version: int
 
 The event envelope must be JSON-safe and append-only.
 
+## Store Cursor and Streaming Contract
+
+`RuntimeEventStore` supports numeric and string event cursors.
+
+- Numeric cursors select events with a greater numeric event id.
+- A known string cursor resumes after its last matching event in append order.
+- An unknown string cursor returns no events; callers must reconnect from a
+  known cursor or use an empty cursor for a full replay.
+
+`stream_runtime_event_store(...)` yields `RuntimeEvent` objects and `None`
+heartbeat markers. It has no default terminal condition: a terminal child
+process is not necessarily the terminal state of a business runtime. A caller
+that owns that policy supplies an explicit `is_terminal(event)` predicate.
+
+`sse_encode_runtime_event(...)` emits the full standard event envelope as the
+SSE `data` payload, using its event id and event type as frame metadata.
+
 ## Event Type Vocabulary
 
 Flowlet should provide a recommended event type vocabulary, but allow extension strings.
@@ -281,4 +298,3 @@ Reducers consume events and produce framework-level state:
 - Timeline.
 
 Business packages can provide additional reducers for business monitor summaries.
-

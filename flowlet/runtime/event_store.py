@@ -8,6 +8,8 @@ from typing import Protocol
 
 from .schema import RuntimeEvent
 
+RuntimeEventCursor = int | str
+
 
 class RuntimeEventStore(Protocol):
     """Minimal store protocol for standard runtime events."""
@@ -16,11 +18,16 @@ class RuntimeEventStore(Protocol):
         """Append one event and return the stored event."""
         ...
 
-    def list(self, *, since: int | None = None) -> list[RuntimeEvent]:
-        """List events, optionally filtering numeric event ids greater than ``since``."""
+    def list(self, *, since: RuntimeEventCursor | None = None) -> list[RuntimeEvent]:
+        """List events after a numeric or known string event cursor."""
         ...
 
-    def wait_for_next(self, *, since: int | None = None, timeout: float | None = None) -> list[RuntimeEvent]:
+    def wait_for_next(
+        self,
+        *,
+        since: RuntimeEventCursor | None = None,
+        timeout: float | None = None,
+    ) -> list[RuntimeEvent]:
         """Wait for matching events or return an empty list when timeout expires."""
         ...
 
@@ -57,14 +64,24 @@ class RuntimeEventJsonlStore:
             self._changed.notify_all()
             return event
 
-    def list(self, *, since: int | None = None) -> list[RuntimeEvent]:
+    def list(self, *, since: RuntimeEventCursor | None = None) -> list[RuntimeEvent]:
         """Return stored events, optionally filtering numeric event ids."""
         with self._lock:
             if since is None:
                 return list(self._events)
+            if isinstance(since, str):
+                for index in range(len(self._events) - 1, -1, -1):
+                    if str(self._events[index].event_id) == since:
+                        return list(self._events[index + 1 :])
+                return []
             return [event for event in self._events if _numeric_event_id(event) > since]
 
-    def wait_for_next(self, *, since: int | None = None, timeout: float | None = None) -> list[RuntimeEvent]:
+    def wait_for_next(
+        self,
+        *,
+        since: RuntimeEventCursor | None = None,
+        timeout: float | None = None,
+    ) -> list[RuntimeEvent]:
         """Wait until matching events are available or timeout expires."""
         with self._changed:
             self._changed.wait_for(lambda: bool(self.list(since=since)), timeout=timeout)

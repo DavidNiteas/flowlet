@@ -428,6 +428,21 @@ MetaMSTools config and the MassLib4Search annotation config.
 - `validate_runtime_sidecar.py --require-sidecar` passes for both target
   runtime directories.
 
+### Continued Progress: Standard Event Store Streaming
+
+- `RuntimeEventStore` now accepts numeric and string event cursors.
+- `wait_runtime_event_store`, `stream_runtime_event_store`, and
+  `sse_encode_runtime_event` provide the standard-store read path.
+- Standard streaming does not treat every terminal process as a terminal
+  runtime. The caller supplies an explicit terminal predicate and receives any
+  trailing events before the iterator ends.
+- Legacy `wait_runtime_events` and `stream_runtime_events` remain compatibility
+  helpers for current business `EventBuffer` APIs.
+
+Validation:
+
+- `flowlet/tests/test_runtime.py`: 34 passed.
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

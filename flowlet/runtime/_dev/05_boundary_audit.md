@@ -122,15 +122,18 @@ This audit classifies the current `flowlet.runtime` APIs against the redesigned 
 
 `wait_runtime_events`
 
-- Classification: framework-stable if generalized to `RuntimeEventStore`.
+- Classification: compatibility helper.
 - Reason: wait loops are framework-level.
-- Direction: keep, but eventually depend on store interfaces rather than legacy event buffers.
+- Direction: keep for legacy buffers. `wait_runtime_event_store` is now the
+  standard-store counterpart.
 
 `stream_runtime_events`
 
-- Classification: framework-stable if generalized to `RuntimeEvent`.
+- Classification: compatibility helper.
 - Reason: event streaming is framework-level.
-- Direction: replace hard-coded `job_state` terminal handling with event status classes.
+- Direction: keep legacy `job_state` handling in the compatibility helper.
+  `stream_runtime_event_store` is the standard counterpart and requires an
+  explicit business terminal predicate rather than guessing from a process event.
 
 `write_runtime_status`
 
@@ -169,4 +172,3 @@ Phase 1 starts by adding standard event schemas:
 - `RuntimeProgress`
 
 These types should be framework-stable and must not mention MetaMSTools, MassLib4Search, OpenMS, annotation, study, workspace, or job-specific business fields.
-

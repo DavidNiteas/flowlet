@@ -20,7 +20,7 @@ from .backend import (
     write_runtime_status,
 )
 from .bundle import RuntimeManagerBundle
-from .event_store import RuntimeEventJsonlStore, RuntimeEventStore
+from .event_store import RuntimeEventCursor, RuntimeEventJsonlStore, RuntimeEventStore
 from .events import EventBuffer, sse_encode_event
 from .executor import RuntimeBackendExecutor
 from .info import RuntimeFileLayout, RuntimeInfo, runtime_info_payload
@@ -58,6 +58,7 @@ from .schema import (
 from .sidecar import RuntimeEventSidecarWriter
 from .snapshot import RuntimeSnapshotLoader, RuntimeSnapshotView
 from .store import RuntimeStore, write_json
+from .stream import sse_encode_runtime_event, stream_runtime_event_store, wait_runtime_event_store
 
 __all__ = [
     "EventBuffer",
@@ -67,6 +68,7 @@ __all__ = [
     "RuntimeFileLayout",
     "RuntimeErrorInfo",
     "RuntimeEvent",
+    "RuntimeEventCursor",
     "RuntimeEventJsonlStore",
     "RuntimeEventStore",
     "RuntimeEventStatus",
@@ -109,9 +111,12 @@ __all__ = [
     "runtime_process_spec_payload",
     "runtime_projection_payload",
     "sse_encode_event",
+    "sse_encode_runtime_event",
+    "stream_runtime_event_store",
     "stream_runtime_events",
     "txn_event_payload_to_runtime_event",
     "wait_runtime_events",
+    "wait_runtime_event_store",
     "write_runtime_status",
     "write_json",
 ]
