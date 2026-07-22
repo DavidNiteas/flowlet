@@ -58,7 +58,7 @@ from .schema import (
     runtime_event_payload,
 )
 from .sidecar import RuntimeEventSidecarWriter
-from .snapshot import RuntimeSnapshotLoader, RuntimeSnapshotView
+from .snapshot import RuntimeObservation, RuntimeSnapshotLoader, RuntimeSnapshotView, load_runtime_observation
 from .store import RuntimeStore, write_json
 from .stream import (
     parse_sse_runtime_events,
@@ -87,6 +87,7 @@ __all__ = [
     "RuntimeFrameworkReducer",
     "RuntimeInfo",
     "RuntimeManagerBundle",
+    "RuntimeObservation",
     "RuntimeProcess",
     "RuntimeProcessBase",
     "RuntimeProcessCapabilities",
@@ -111,6 +112,7 @@ __all__ = [
     "export_runtime_manager_files",
     "list_runtime_artifacts",
     "load_runtime_projection",
+    "load_runtime_observation",
     "manager_record_to_runtime_event",
     "mirror_runtime_events",
     "model_dump_json_safe",

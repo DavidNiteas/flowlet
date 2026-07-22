@@ -8,9 +8,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
+from pydantic import BaseModel, Field
+
 from .info import RuntimeFileLayout
 from .process import RuntimeProcessSpec
 from .projection import RuntimeProjection, load_runtime_projection
+from .store import RuntimeStore
 
 StatusT = TypeVar("StatusT")
 SnapshotT = TypeVar("SnapshotT")
@@ -26,6 +29,28 @@ class RuntimeSnapshotView(Generic[MonitorT, SnapshotT]):
     runtime_info: dict[str, Any] | None = None
     projection: RuntimeProjection | None = None
     process_specs: list[RuntimeProcessSpec] = field(default_factory=list)
+
+
+class RuntimeObservation(BaseModel):
+    """Framework-only persisted observation for one runtime directory."""
+
+    runtime_id: str
+    projection: RuntimeProjection | None = None
+    process_specs: list[RuntimeProcessSpec] = Field(default_factory=list)
+
+    def is_available(self) -> bool:
+        """Return whether the directory has any standard observation artifact."""
+        return self.projection is not None or bool(self.process_specs)
+
+
+def load_runtime_observation(runtime_dir: str | Path, *, runtime_id: str) -> RuntimeObservation:
+    """Load framework projection and process declarations without business schemas."""
+    store = RuntimeStore(runtime_dir)
+    return RuntimeObservation(
+        runtime_id=runtime_id,
+        projection=store.load_projection(),
+        process_specs=store.load_process_specs(),
+    )
 
 
 class RuntimeSnapshotLoader(Generic[StatusT, SnapshotT, MonitorT]):

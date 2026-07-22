@@ -45,6 +45,11 @@ HTTP clients expose `runtime_observation()`, and MetaMSTools GUI proxies it at:
 GET /api/v1/tasks/{task_id}/runtime-observation
 ```
 
+Flowlet owns the JSON-safe framework shape as `RuntimeObservation` and
+`load_runtime_observation()`. Business backends provide the `runtime_id` from
+their known job record and translate an unavailable observation into their HTTP
+status; they do not duplicate projection/manifest loading logic.
+
 ## Current Baseline
 
 | Surface | MetaMSTools | MassLib4Search | Standard-event state |

@@ -17,6 +17,7 @@ from flowlet.runtime import (
     RuntimeInfo,
     RuntimeManagerBundle,
     RuntimeManagerEventBridge,
+    RuntimeObservation,
     RuntimeProcessBase,
     RuntimeProcessCapabilities,
     RuntimeProcessContext,
@@ -35,6 +36,7 @@ from flowlet.runtime import (
     RuntimeStore,
     RuntimeUnsupportedOperationError,
     list_runtime_artifacts,
+    load_runtime_observation,
     load_runtime_projection,
     manager_record_to_runtime_event,
     parse_sse_runtime_events,
@@ -100,6 +102,21 @@ def test_runtime_store_writes_standard_files_and_lists_artifacts(tmp_path):
         "status.json",
     }
     assert store.load_process_specs()[0].resolved_process_id() == "process1"
+
+
+def test_load_runtime_observation_reads_only_framework_artifacts(tmp_path):
+    runtime_dir = tmp_path / "runtime"
+    store = RuntimeStore(runtime_dir)
+    store.write_process_specs([RuntimeProcessSpec(process_id="process1", process_type="example.process")])
+    store.write_projection(RuntimeProjection(runtime_id="runtime1").model_dump(mode="json"))
+
+    observation = load_runtime_observation(runtime_dir, runtime_id="business-id")
+
+    assert isinstance(observation, RuntimeObservation)
+    assert observation.runtime_id == "business-id"
+    assert observation.projection is not None
+    assert observation.process_specs[0].process_type == "example.process"
+    assert observation.is_available()
 
 
 def test_runtime_event_payload_is_json_safe():

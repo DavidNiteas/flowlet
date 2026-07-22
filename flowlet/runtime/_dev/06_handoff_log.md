@@ -134,6 +134,14 @@ HTTP clients expose `runtime_observation()`, and MetaMSTools GUI proxies the
 same resource. This gives live UI work a stable read-only observation snapshot
 without exposing business monitor inference or controls.
 
+### Flowlet RuntimeObservation
+
+Promoted the observation response shape into Flowlet as `RuntimeObservation`
+and `load_runtime_observation()`. Both business backend endpoints now delegate
+projection/manifest loading to this framework helper while retaining ownership
+of job identity and HTTP error policy. Framework plus both backend suites
+passed (74 tests).
+
 ### Completed
 
 - Added initial design document set under `flowlet/flowlet/runtime/_dev`.

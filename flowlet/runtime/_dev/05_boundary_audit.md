@@ -69,6 +69,14 @@ This audit classifies the current `flowlet.runtime` APIs against the redesigned 
 - Classification: compatibility helper.
 - Reason: useful wrapper for current readers; not the canonical runtime state model.
 
+`RuntimeObservation` and `load_runtime_observation`
+
+- Classification: framework-stable.
+- Reason: combines only persisted framework projection and process declarations
+  into a JSON-safe read model.
+- Notes: callers must supply the runtime identity they already own; this API
+  must not load a business record or derive business monitor hierarchy.
+
 ### Runtime Managers
 
 `RuntimeManagerBundle`
