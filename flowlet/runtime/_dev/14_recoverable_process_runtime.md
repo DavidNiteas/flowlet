@@ -119,7 +119,10 @@ new fields are optional or have backward-compatible defaults.
    `RuntimeProcessContext.commit_checkpoint()` and `invalidate_checkpoint()`
    are the only framework helpers that add/remove recoverable checkpoint
    references; the legacy `checkpoint()` helper remains telemetry-only.
-6. Add MetaMSTools and MassLib4Search adapters and package-level tests.
+6. Completed baseline: MetaMSTools and MassLib4Search package adapters produce
+   framework specs, source projections, and decisions from existing business
+   artifacts, with package-level tests. Business hook dispatch integration is
+   the next increment.
 7. Run isolated real-liver skip, failure/retry, and checkpoint-resume cases.
 
 ## Acceptance
@@ -134,3 +137,23 @@ new fields are optional or have backward-compatible defaults.
 - Both package adapters preserve their current workspace and output behavior.
 - Fresh isolated liver regressions prove skip, retry, and available-checkpoint
   continuation with numerical/business outputs still readable.
+
+## Package Adapter Baseline
+
+MetaMSTools `txn.recovery.inspect_openms_run_recovery_input()` computes the
+same run fingerprint used by streaming execution and inspects standard study
+rows plus `.metams/streaming` status/artifact files. Valid rows become `skip`;
+missing, partial, or fingerprint-incompatible rows become `restart`. The new
+inspection API is read-only. The existing execution loader retains its cleanup
+behavior for invalid partial rows.
+
+MassLib4Search `txn.search.recovery.load_annotation_recovery_input()` reads the
+annotation execution plan and run manifest. It verifies the resume-safety
+fingerprint, requires existing result shards before `skip`, maps failed rows to
+`retry`, and pending/missing rows to `restart`. A partially completed study
+gets a committed study checkpoint whose cursor lists validated completed run
+processes, allowing the planner to select `resume` for final study assembly.
+
+These adapters prove package-owned inspection and plan construction. They do
+not yet replace current business resume entry points or dispatch OpenMS/search
+business implementations through `RuntimeBackendExecutor`.

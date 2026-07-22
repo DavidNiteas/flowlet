@@ -51,6 +51,23 @@ through explicit context methods that enforce process and attempt identity.
 The existing `checkpoint()` method remains unchanged as telemetry, preventing
 old manager records from accidentally becoming executable recovery state.
 
+### Package Recovery Adapter Baseline
+
+MetaMSTools now translates fingerprinted streaming run shards into run process
+specs and `skip`/`restart` decisions. A separate read-only inspection helper
+was added because the existing execution loader intentionally cleans invalid
+partial shards; recovery planning must not mutate source state.
+
+MassLib4Search now translates annotation execution plans and run manifests
+into run/study process specs, source projection state, and decisions. Existing
+result shards are required for skip, failed rows become retry, and partial
+completion yields a study checkpoint over committed run ids. The Flowlet
+planner test produces `skip -> retry -> resume` from this package-owned state.
+
+Package tests and the existing OpenMS batch/annotation workflow regressions
+passed. Actual business hook dispatch remains pending; no current resume route
+or workspace behavior changed.
+
 ### Current-Layout Regression Audit
 
 The real liver workspace was reclassified into two evidence levels:
