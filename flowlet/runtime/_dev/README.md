@@ -13,6 +13,7 @@ The goal is to make Flowlet a business-neutral runtime framework for observable 
 - [05_boundary_audit.md](05_boundary_audit.md): Current Flowlet runtime boundary audit.
 - [06_handoff_log.md](06_handoff_log.md): Implementation handoff log.
 - [07_real_workspace_regression.md](07_real_workspace_regression.md): Real liver workspace regression procedure.
+- [08_business_projection_adapters.md](08_business_projection_adapters.md): Package-owned projection adapter contract for CLI/TUI readers.
 
 ## Design Position
 
