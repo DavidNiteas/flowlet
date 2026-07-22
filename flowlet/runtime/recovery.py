@@ -143,13 +143,21 @@ class RuntimeProcessAttempt(BaseModel):
     attempt_id: str
     process_id: str
     runtime_id: str
+    execution_id: str | None = None
     ordinal: int
+    operation: RuntimeProcessOperation | None = None
+    execution_key: str | None = None
+    input_fingerprint: str | None = None
+    implementation_version: str | None = None
     status: RuntimeEventStatus | str = RuntimeEventStatus.PENDING
     status_class: RuntimeStatusClass = RuntimeStatusClass.NOT_STARTED
     started_at: float | None = None
     finished_at: float | None = None
     resumed_from_attempt_id: str | None = None
     checkpoint_id: str | None = None
+    backend_session_id: str | None = None
+    first_event_sequence: int | None = None
+    last_event_sequence: int | None = None
     error: RuntimeErrorInfo | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 

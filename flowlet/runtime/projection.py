@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from .process import RuntimeProcessState, RuntimeResourceUsage
+from .process import RuntimeProcessOperation, RuntimeProcessState, RuntimeResourceUsage
 from .recovery import RuntimeCheckpointRef, RuntimeProcessAttempt
 from .schema import (
     RuntimeErrorInfo,
@@ -188,13 +188,20 @@ def _apply_attempt_event(projection: RuntimeProjection, event: RuntimeEvent) -> 
             attempt_id=event.attempt_id,
             process_id=event.process_id,
             runtime_id=event.runtime_id,
+            execution_id=event.execution_id,
             ordinal=int(event.payload.get("ordinal", len(attempt_ids))),
+            operation=_attempt_operation(event.payload),
+            execution_key=event.payload.get("execution_key"),
+            input_fingerprint=event.payload.get("input_fingerprint"),
+            implementation_version=event.payload.get("implementation_version"),
+            first_event_sequence=_event_sequence(event),
         )
     update: dict[str, Any] = {
         "status": event.status or default_status,
         "status_class": event.status_class or default_status_class,
         "checkpoint_id": event.checkpoint_id or attempt.checkpoint_id,
         "error": event.error or attempt.error,
+        "last_event_sequence": _event_sequence(event),
     }
     if event.payload.get("resumed_from_attempt_id") is not None:
         update["resumed_from_attempt_id"] = str(event.payload["resumed_from_attempt_id"])
@@ -363,10 +370,31 @@ def _count_processes(projection: RuntimeProjection, status_class: RuntimeStatusC
     return sum(1 for state in projection.processes.values() if state.status_class == status_class)
 
 
-def _event_sort_key(event: RuntimeEvent) -> tuple[float, int, str]:
+def _event_sort_key(event: RuntimeEvent) -> tuple[int, float, int, str]:
     numeric_id = -1
     try:
         numeric_id = int(event.event_id)
     except (TypeError, ValueError):
         pass
-    return (event.timestamp, numeric_id, str(event.event_id))
+    if event.sequence is not None:
+        return (0, float(event.sequence), numeric_id, str(event.event_id))
+    return (1, event.timestamp, numeric_id, str(event.event_id))
+
+
+def _event_sequence(event: RuntimeEvent) -> int | None:
+    value = event.sequence if event.sequence is not None else event.event_id
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _attempt_operation(payload: dict[str, Any]) -> RuntimeProcessOperation | None:
+    mapping = {
+        "start": RuntimeProcessOperation.START,
+        "resume": RuntimeProcessOperation.RESUME,
+        "retry": RuntimeProcessOperation.RETRY,
+        "restart": RuntimeProcessOperation.START,
+    }
+    value = payload.get("operation", payload.get("recovery_action"))
+    return mapping.get(str(value))

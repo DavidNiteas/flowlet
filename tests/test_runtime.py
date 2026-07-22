@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -11,14 +13,20 @@ from flowlet.runtime import (
     RuntimeCheckpointMode,
     RuntimeCheckpointPolicy,
     RuntimeCheckpointRef,
+    RuntimeDirectoryManager,
+    RuntimeDurableStore,
     RuntimeErrorInfo,
     RuntimeEvent,
     RuntimeEventJsonlStore,
     RuntimeEventSidecarWriter,
     RuntimeEventStatus,
     RuntimeEventType,
+    RuntimeExecutionKind,
+    RuntimeExecutionStatus,
     RuntimeFrameworkReducer,
     RuntimeIdempotency,
+    RuntimeIdentity,
+    RuntimeIdentityMismatchError,
     RuntimeInfo,
     RuntimeManagerBundle,
     RuntimeManagerEventBridge,
@@ -90,7 +98,231 @@ def test_runtime_info_payload_is_json_safe(tmp_path):
     assert restored.job_type == "example.job"
     assert restored.runtime_files.progress == "runtime/progress.json"
     assert restored.runtime_files.runtime_events == "runtime/events.runtime.jsonl"
+    assert restored.runtime_files.durable_database == "runtime/runtime.db"
     assert restored.runtime_files.processes == "runtime/processes.json"
+
+
+def test_durable_runtime_store_preserves_identity_and_continuation_ledger(tmp_path):
+    identity = RuntimeIdentity(
+        runtime_id="runtime-1",
+        logical_task_id="annotation-1",
+        generation=1,
+        created_at=1.0,
+    )
+    store = RuntimeDurableStore.create(tmp_path / "runtime.db", identity)
+    initial = store.begin_execution(
+        execution_id="execution-1",
+        kind=RuntimeExecutionKind.INITIAL,
+        created_at=2.0,
+        backend_session_id="session-1",
+    )
+    store.transition_execution("execution-1", RuntimeExecutionStatus.RUNNING, timestamp=3.0)
+    store.transition_execution("execution-1", RuntimeExecutionStatus.INTERRUPTED, timestamp=4.0)
+    continued = store.begin_execution(
+        execution_id="execution-2",
+        kind=RuntimeExecutionKind.CONTINUE,
+        created_at=5.0,
+        backend_session_id="session-2",
+    )
+
+    assert store.identity() == identity
+    assert initial.ordinal == 1
+    assert continued.ordinal == 2
+    assert [event.event_id for event in store.list()] == [0, 1, 2, 3]
+    assert {event.runtime_id for event in store.list()} == {"runtime-1"}
+    ledger = store.ledger()
+    assert ledger.execution_order == ["execution-1", "execution-2"]
+    assert ledger.executions["execution-1"].status == RuntimeExecutionStatus.INTERRUPTED
+    assert ledger.executions["execution-2"].kind == RuntimeExecutionKind.CONTINUE
+    assert ledger.last_event_sequence == 3
+
+    reopened = RuntimeDurableStore(tmp_path / "runtime.db", expected_runtime_id="runtime-1")
+    assert reopened.ledger() == ledger
+    with pytest.raises(RuntimeIdentityMismatchError):
+        RuntimeDurableStore(tmp_path / "runtime.db", expected_runtime_id="another-runtime")
+    with pytest.raises(RuntimeIdentityMismatchError):
+        store.append(
+            RuntimeEvent(
+                event_id=-1,
+                runtime_id="another-runtime",
+                event_type="log.emitted",
+                timestamp=6.0,
+            )
+        )
+    with pytest.raises(ValueError, match="Invalid execution transition"):
+        store.transition_execution("execution-1", RuntimeExecutionStatus.RUNNING, timestamp=7.0)
+
+
+def test_durable_runtime_store_allocates_unique_sequences_across_writers(tmp_path):
+    database_path = tmp_path / "runtime.db"
+    RuntimeDurableStore.create(
+        database_path,
+        RuntimeIdentity(runtime_id="runtime-1", created_at=1.0),
+    )
+
+    def append_batch(worker: int) -> None:
+        writer = RuntimeDurableStore(database_path, expected_runtime_id="runtime-1")
+        for item in range(10):
+            writer.append(
+                RuntimeEvent(
+                    event_id=-1,
+                    runtime_id="runtime-1",
+                    event_type="metric.sampled",
+                    timestamp=float(worker * 10 + item),
+                    payload={"worker": worker, "item": item},
+                )
+            )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(append_batch, range(4)))
+
+    store = RuntimeDurableStore(database_path, expected_runtime_id="runtime-1")
+    events = store.list()
+    assert [event.event_id for event in events] == list(range(40))
+    assert [event.sequence for event in events] == list(range(40))
+
+
+def test_durable_runtime_store_materializes_attempts_and_projection_cursor(tmp_path):
+    store = RuntimeDurableStore.create(
+        tmp_path / "runtime.db",
+        RuntimeIdentity(runtime_id="runtime-1", created_at=1.0),
+    )
+    store.begin_execution(
+        execution_id="execution-1",
+        kind=RuntimeExecutionKind.INITIAL,
+        created_at=2.0,
+    )
+    store.write_process_specs(
+        [RuntimeProcessSpec(process_id="process-1", process_type="example.process")]
+    )
+    transitions = [
+        (RuntimeEventType.PROCESS_ATTEMPT_CREATED, RuntimeEventStatus.PENDING, RuntimeStatusClass.NOT_STARTED, 3.0),
+        (RuntimeEventType.PROCESS_ATTEMPT_STARTED, RuntimeEventStatus.RUNNING, RuntimeStatusClass.ACTIVE, 4.0),
+        (
+            RuntimeEventType.PROCESS_ATTEMPT_COMPLETED,
+            RuntimeEventStatus.SUCCEEDED,
+            RuntimeStatusClass.TERMINAL_SUCCESS,
+            5.0,
+        ),
+    ]
+    for event_type, status, status_class, timestamp in transitions:
+        store.append(
+            RuntimeEvent(
+                event_id=-1,
+                runtime_id="runtime-1",
+                execution_id="execution-1",
+                process_id="process-1",
+                attempt_id="attempt-1",
+                event_type=event_type,
+                timestamp=timestamp,
+                status=status,
+                status_class=status_class,
+                payload={"ordinal": 1, "recovery_action": "retry"},
+            )
+        )
+
+    ledger = store.ledger()
+    attempt = ledger.attempts["attempt-1"]
+    assert attempt.execution_id == "execution-1"
+    assert attempt.operation == RuntimeProcessOperation.RETRY
+    assert attempt.status == RuntimeEventStatus.SUCCEEDED
+    assert attempt.first_event_sequence == 1
+    assert attempt.last_event_sequence == 3
+    assert ledger.executions["execution-1"].last_event_sequence == 3
+    assert [spec.resolved_process_id() for spec in store.load_process_specs()] == ["process-1"]
+
+    projection = RuntimeFrameworkReducer().reduce(store.list())
+    store.write_projection(projection, through_sequence=store.last_event_sequence())
+    store.append(
+        RuntimeEvent(
+            event_id=-1,
+            runtime_id="runtime-1",
+            event_type=RuntimeEventType.LOG_EMITTED,
+            timestamp=6.0,
+        )
+    )
+
+    persisted_projection, through_sequence = store.load_projection() or (None, None)
+    assert persisted_projection == projection
+    assert through_sequence == 3
+    assert [event.event_id for event in store.events_after_projection()] == [4]
+    assert store.ledger().projection_sequence == 3
+
+
+def test_runtime_directory_manager_rerun_replaces_lineage_and_recovers_interrupted_reset(
+    tmp_path, monkeypatch
+):
+    runtime_dir = tmp_path / "runtime"
+    manager = RuntimeDirectoryManager(runtime_dir)
+    original = RuntimeIdentity(
+        runtime_id="runtime-1",
+        logical_task_id="task-1",
+        generation=1,
+        created_at=1.0,
+    )
+    store = manager.create(original)
+    store.append(
+        RuntimeEvent(
+            event_id=-1,
+            runtime_id="runtime-1",
+            event_type=RuntimeEventType.LOG_EMITTED,
+            timestamp=2.0,
+        )
+    )
+    (runtime_dir / "status.json").write_text("old runtime", encoding="utf-8")
+    replacement = RuntimeIdentity(
+        runtime_id="runtime-2",
+        logical_task_id="task-1",
+        generation=2,
+        rerun_of_runtime_id="runtime-1",
+        created_at=3.0,
+    )
+    cleaned: list[tuple[Path, RuntimeIdentity]] = []
+
+    def cleanup(path: Path, identity: RuntimeIdentity) -> None:
+        cleaned.append((path, identity))
+
+    def fail_initialization(identity: RuntimeIdentity) -> None:
+        del identity
+        raise RuntimeError("synthetic reset interruption")
+
+    monkeypatch.setattr(manager, "_initialize_new_store", fail_initialization)
+    with pytest.raises(RuntimeError, match="synthetic reset interruption"):
+        manager.rerun(
+            replacement,
+            expected_runtime_id="runtime-1",
+            cleanup=cleanup,
+        )
+
+    assert manager.marker_path.exists()
+    assert not (runtime_dir / "status.json").exists()
+    recovered = RuntimeDirectoryManager(runtime_dir).recover_pending_reset()
+    assert recovered is not None
+    assert recovered.identity() == replacement
+    assert recovered.last_event_sequence() == -1
+    assert cleaned == [(runtime_dir, original)]
+    assert not manager.marker_path.exists()
+    assert not list(tmp_path.glob(".runtime.abandoned.*"))
+
+    initial = recovered.begin_execution(
+        execution_id="execution-1",
+        kind=RuntimeExecutionKind.INITIAL,
+        created_at=4.0,
+    )
+    assert initial.first_event_sequence == 0
+    continued = RuntimeDirectoryManager(runtime_dir).continue_runtime(
+        expected_runtime_id="runtime-2"
+    )
+    assert continued.identity() == replacement
+
+
+def test_runtime_directory_manager_rejects_rerun_identity_reuse(tmp_path):
+    manager = RuntimeDirectoryManager(tmp_path / "runtime")
+    identity = RuntimeIdentity(runtime_id="runtime-1", generation=1, created_at=1.0)
+    manager.create(identity)
+
+    with pytest.raises(ValueError, match="new runtime_id"):
+        manager.rerun(identity, expected_runtime_id="runtime-1")
 
 
 def test_runtime_store_writes_standard_files_and_lists_artifacts(tmp_path):
@@ -882,11 +1114,16 @@ def test_runtime_backend_executor_syncs_non_owned_manager_bridge(tmp_path):
 
         assert [event.event_type for event in store.list()] == [
             "process.created",
+            "process.attempt.created",
+            "process.attempt.started",
             "process.status.changed",
             "process.status.changed",
+            "process.attempt.completed",
             "process.progressed",
             "log.emitted",
         ]
+        attempt = executor.projection().attempts["manager-process:attempt:1"]
+        assert attempt.operation == RuntimeProcessOperation.START
         assert executor.projection().processes["manager-process"].status == RuntimeEventStatus.SUCCEEDED
     finally:
         runtime.close()
@@ -1114,6 +1351,96 @@ def test_runtime_backend_executor_runs_processes_and_writes_projection(tmp_path)
     assert projection.processes["p2"].parent_process_id == "p1"
     assert restored == projection
     assert [spec.resolved_process_id() for spec in specs] == ["p1", "p2"]
+
+
+def test_runtime_backend_executor_uses_durable_execution_and_attempt_identity(tmp_path):
+    class ExampleProcess(RuntimeProcessBase):
+        def start(self, context: RuntimeProcessContext) -> dict[str, Any]:
+            return {"execution_id": context.execution_id}
+
+    runtime_dir = tmp_path / "runtime"
+    manager = RuntimeDirectoryManager(runtime_dir)
+    store = manager.create(RuntimeIdentity(runtime_id="runtime-1", created_at=1.0))
+    store.begin_execution(
+        execution_id="execution-1",
+        kind=RuntimeExecutionKind.INITIAL,
+        created_at=2.0,
+    )
+    store.transition_execution("execution-1", RuntimeExecutionStatus.RUNNING, timestamp=3.0)
+    spec = RuntimeProcessSpec(
+        process_id="process-1",
+        process_type="example.process",
+        execution_key="stable-process",
+        input_fingerprint="input-v1",
+        implementation_version="implementation-v1",
+    )
+    executor = RuntimeBackendExecutor(
+        runtime_id="runtime-1",
+        execution_id="execution-1",
+        runtime_dir=runtime_dir,
+        event_store=store,
+    )
+    executor.register(ExampleProcess(spec))
+    assert executor.run_process("process-1") == {"execution_id": "execution-1"}
+    store.transition_execution("execution-1", RuntimeExecutionStatus.SUCCEEDED, timestamp=4.0)
+    executor.write_projection()
+
+    store.begin_execution(
+        execution_id="execution-2",
+        kind=RuntimeExecutionKind.CONTINUE,
+        created_at=5.0,
+    )
+    store.transition_execution("execution-2", RuntimeExecutionStatus.RUNNING, timestamp=6.0)
+    continued = RuntimeBackendExecutor(
+        runtime_id="runtime-1",
+        execution_id="execution-2",
+        runtime_dir=runtime_dir,
+        event_store=store,
+    )
+    created_count = sum(event.event_type == RuntimeEventType.PROCESS_CREATED for event in store.list())
+    continued.register(ExampleProcess(spec))
+    assert sum(event.event_type == RuntimeEventType.PROCESS_CREATED for event in store.list()) == created_count
+    assert continued.run_process("process-1") == {"execution_id": "execution-2"}
+
+    ledger = store.ledger()
+    assert ledger.process_attempt_ids["process-1"] == [
+        "process-1:attempt:1",
+        "process-1:attempt:2",
+    ]
+    assert ledger.attempts["process-1:attempt:1"].execution_id == "execution-1"
+    assert ledger.attempts["process-1:attempt:2"].execution_id == "execution-2"
+    assert ledger.attempts["process-1:attempt:2"].execution_key == "stable-process"
+    assert ledger.attempts["process-1:attempt:2"].input_fingerprint == "input-v1"
+    assert store.load_projection() is not None
+
+
+def test_runtime_framework_reducer_prefers_durable_sequence_over_worker_clock():
+    events = [
+        RuntimeEvent(
+            event_id=0,
+            sequence=0,
+            runtime_id="runtime-1",
+            process_id="process-1",
+            event_type=RuntimeEventType.PROCESS_STATUS_CHANGED,
+            timestamp=20.0,
+            status=RuntimeEventStatus.RUNNING,
+            status_class=RuntimeStatusClass.ACTIVE,
+        ),
+        RuntimeEvent(
+            event_id=1,
+            sequence=1,
+            runtime_id="runtime-1",
+            process_id="process-1",
+            event_type=RuntimeEventType.PROCESS_STATUS_CHANGED,
+            timestamp=10.0,
+            status=RuntimeEventStatus.SUCCEEDED,
+            status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+        ),
+    ]
+
+    projection = RuntimeFrameworkReducer().reduce(events)
+
+    assert projection.processes["process-1"].status == RuntimeEventStatus.SUCCEEDED
 
 
 def test_runtime_backend_executor_reports_failure_and_cancel(tmp_path):

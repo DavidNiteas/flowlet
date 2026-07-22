@@ -461,6 +461,42 @@ MetaMSTools `skip, skip, restart` and MassLib4Search
 `skip, skip, retry, resume`, including checkpoint cursor use, unchanged reused
 run outputs, append-only resumed-job lifecycle, and strict sidecar validation.
 
+## Phase 11: Durable Runtime Foundation
+
+Status: in progress. See
+[15_durable_runtime_foundation.md](15_durable_runtime_foundation.md).
+
+### Goal
+
+Replace job-id-scoped sidecar integration with a stable runtime lineage,
+transactional append journal, process execution ledger, and explicit
+`continue_runtime` versus `rerun_runtime` behavior. This is the prerequisite
+for both business txn backends to execute on Flowlet rather than beside it.
+
+### Current Baseline
+
+- Stable runtime and execution-wave identities are implemented.
+- Standard events and process attempts can carry `execution_id`.
+- `RuntimeDurableStore` transactionally allocates event sequences and updates
+  execution/attempt ledger rows.
+- Process declarations and projection cursors are persisted in the same
+  durable database.
+- Guarded runtime-directory rerun creates a new generation and can finish an
+  initialization interrupted after old state was staged.
+- The reference executor records normal process attempts under an execution
+  wave and does not redeclare an unchanged process during continue.
+- Concurrent-store, reopen, identity mismatch, continuation, attempt ledger,
+  and incremental cursor tests pass.
+
+### Remaining Work
+
+- Runtime leases around the implemented directory reset lock.
+- Interrupted-attempt reconciliation and idempotent commands.
+- Incremental projection reducer and rebuild audit.
+- DAG continuation executor and cleanup enforcement.
+- MetaMSTools and MassLib4Search txn migration.
+- Fault injection, compatibility, and real-workspace acceptance.
+
 ## Standard Regression Commands
 
 Run through Pixi only:

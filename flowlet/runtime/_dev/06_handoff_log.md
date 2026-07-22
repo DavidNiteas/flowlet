@@ -914,3 +914,28 @@ Keep these in business packages:
 - Native standard-only runtimes use the validator's explicit
   `--allow-standard-only` option. This does not relax root declaration,
   process manifest, projection, or sidecar checks.
+
+### Phase 11 Start: Stable Identity And Durable Journal
+
+- The backend audit found that both packages still equate `job_id` with
+  `runtime_id` and mutate nonterminal restored jobs to `BackendRestarted`.
+  MassLib4Search also overwrites single-value job/status files when continuing
+  a shared annotation runtime.
+- `RuntimeIdentity` now defines one immutable lineage. Continue keeps that
+  identity and creates a new `RuntimeExecutionRecord`; rerun must create a new
+  runtime identity and clean the old directory through a guarded reset.
+- `RuntimeEvent` and process attempts now carry optional `execution_id` while
+  retaining backward compatibility.
+- `RuntimeDurableStore` is a SQLite WAL baseline with transactionally allocated
+  event sequences, identity rejection, execution transitions, process specs,
+  attempt materialization, and projection cursors.
+- `RuntimeDirectoryManager` now provides guarded create/continue/rerun. A
+  durable reset marker allows the next process to finish initialization after
+  old state was staged, and rerun enforces a new id plus generation.
+- The reference executor now records attempts for ordinary starts, propagates
+  `execution_id`, and reuses stable process declarations on continue.
+- Flowlet runtime tests pass at 62 tests. Concurrent coverage uses four store
+  instances and proves unique canonical sequences `0..39`.
+- Neither txn backend uses the durable store yet. Runtime leases,
+  interrupted-attempt reconciliation, incremental reducer integration, and
+  package migration remain required before Phase 11 completion.

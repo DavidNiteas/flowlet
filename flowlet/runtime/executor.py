@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .durable_store import RuntimeDurableStore
 from .event_store import RuntimeEventJsonlStore, RuntimeEventStore
 from .manager_bridge import RuntimeManagerEventBridge
 from .process import (
@@ -13,6 +14,7 @@ from .process import (
     RuntimeProcessContext,
     RuntimeProcessOperation,
     RuntimeProcessRunner,
+    RuntimeProcessSpec,
     RuntimeResourceUsage,
     RuntimeUnsupportedOperationError,
 )
@@ -34,12 +36,14 @@ class RuntimeBackendExecutor:
         self,
         *,
         runtime_id: str,
+        execution_id: str | None = None,
         runtime_dir: str | Path | None = None,
         event_store: RuntimeEventStore | None = None,
         manager_bridge: RuntimeManagerEventBridge | None = None,
         projection_policy: RuntimeProjectionPolicy | None = None,
     ) -> None:
         self.runtime_id = runtime_id
+        self.execution_id = execution_id
         self.runtime_dir = Path(runtime_dir) if runtime_dir is not None else None
         self.event_store = event_store or RuntimeEventJsonlStore(
             RuntimeStore(self.runtime_dir).path(RuntimeStore(self.runtime_dir).layout.runtime_events)
@@ -56,23 +60,73 @@ class RuntimeBackendExecutor:
     def register(self, process: RuntimeProcess) -> RuntimeProcess:
         """Register a process implementation."""
         process_id = process.spec.resolved_process_id()
+        existing_specs = {spec.resolved_process_id(): spec for spec in self._load_process_specs()}
+        existing = existing_specs.get(process_id)
+        if existing is not None and existing != process.spec:
+            raise ValueError(f"Process spec changed within runtime lineage: {process_id!r}")
         self._processes[process_id] = process
         self._write_process_specs()
-        self._context_for(process).emit_process_created(
-            process.spec.process_type,
-            display_name=process.spec.display_name,
-            metadata=process.spec.metadata,
-        )
+        if existing is None:
+            self._context_for(process).emit_process_created(
+                process.spec.process_type,
+                display_name=process.spec.display_name,
+                metadata=process.spec.metadata,
+            )
         self.write_projection()
         return process
 
     def run_process(self, process_id: str) -> Any:
         """Run one registered process and persist the current projection."""
         process = self._get_process(process_id)
-        context = self._context_for(process)
+        ordinal = len(self.projection().process_attempt_ids.get(process_id, [])) + 1
+        attempt_id = f"{process_id}:attempt:{ordinal}"
+        context = self._context_for(process, attempt_id=attempt_id)
+        attempt_payload = {
+            "ordinal": ordinal,
+            "operation": RuntimeProcessOperation.START,
+            "execution_key": process.spec.execution_key,
+            "input_fingerprint": process.spec.input_fingerprint,
+            "implementation_version": process.spec.implementation_version,
+        }
         self.sync_manager_events()
         try:
-            return RuntimeProcessRunner(context).run(process)
+            self._emit_attempt_event(
+                context,
+                RuntimeEventType.PROCESS_ATTEMPT_CREATED,
+                status=RuntimeEventStatus.PENDING,
+                status_class=RuntimeStatusClass.NOT_STARTED,
+                payload=attempt_payload,
+            )
+            self._emit_attempt_event(
+                context,
+                RuntimeEventType.PROCESS_ATTEMPT_STARTED,
+                status=RuntimeEventStatus.RUNNING,
+                status_class=RuntimeStatusClass.ACTIVE,
+                payload=attempt_payload,
+            )
+            result = RuntimeProcessRunner(context).run(process)
+        except Exception as exc:
+            self._emit_attempt_event(
+                context,
+                RuntimeEventType.PROCESS_ATTEMPT_FAILED,
+                status=RuntimeEventStatus.FAILED,
+                status_class=RuntimeStatusClass.TERMINAL_FAILURE,
+                error=RuntimeErrorInfo(type=type(exc).__name__, message=str(exc)),
+                payload=attempt_payload,
+            )
+            raise
+        else:
+            self._emit_attempt_event(
+                context,
+                RuntimeEventType.PROCESS_ATTEMPT_COMPLETED,
+                status=RuntimeEventStatus.SUCCEEDED,
+                status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+                payload={
+                    **attempt_payload,
+                    "result": result if isinstance(result, dict) else {"value": result},
+                },
+            )
+            return result
         finally:
             self.sync_manager_events()
             self.write_projection()
@@ -217,13 +271,30 @@ class RuntimeBackendExecutor:
     def write_projection(self) -> RuntimeProjection:
         """Persist and return the current framework projection."""
         projection = self.projection()
+        if isinstance(self.event_store, RuntimeDurableStore):
+            self.event_store.write_projection(
+                projection,
+                through_sequence=self.event_store.last_event_sequence(),
+            )
         if self.runtime_dir is not None:
             RuntimeStore(self.runtime_dir).write_projection(projection.model_dump(mode="json"))
         return projection
 
     def _write_process_specs(self) -> None:
+        specs = {spec.resolved_process_id(): spec for spec in self._load_process_specs()}
+        specs.update({process.spec.resolved_process_id(): process.spec for process in self._processes.values()})
+        values = list(specs.values())
+        if isinstance(self.event_store, RuntimeDurableStore):
+            self.event_store.write_process_specs(values)
         if self.runtime_dir is not None:
-            RuntimeStore(self.runtime_dir).write_process_specs([process.spec for process in self._processes.values()])
+            RuntimeStore(self.runtime_dir).write_process_specs(values)
+
+    def _load_process_specs(self) -> list[RuntimeProcessSpec]:
+        if isinstance(self.event_store, RuntimeDurableStore):
+            return self.event_store.load_process_specs()
+        if self.runtime_dir is not None:
+            return RuntimeStore(self.runtime_dir).load_process_specs()
+        return []
 
     def _context_for(
         self,
@@ -237,6 +308,7 @@ class RuntimeBackendExecutor:
             runtime_id=self.runtime_id,
             process_id=process_id,
             parent_process_id=process.spec.parent_process_id,
+            execution_id=self.execution_id,
             attempt_id=attempt_id,
             checkpoint_id=checkpoint_id,
             event_store=self.event_store,
@@ -252,7 +324,13 @@ class RuntimeBackendExecutor:
         attempt_id = f"{step.process_id}:attempt:{ordinal}"
         checkpoint_id = step.checkpoint.checkpoint_id if step.checkpoint is not None else None
         context = self._context_for(process, attempt_id=attempt_id, checkpoint_id=checkpoint_id)
-        attempt_payload: dict[str, Any] = {"ordinal": ordinal, "recovery_action": step.action}
+        attempt_payload: dict[str, Any] = {
+            "ordinal": ordinal,
+            "recovery_action": step.action,
+            "execution_key": process.spec.execution_key,
+            "input_fingerprint": process.spec.input_fingerprint,
+            "implementation_version": process.spec.implementation_version,
+        }
         if step.source_attempt_id is not None:
             attempt_payload["resumed_from_attempt_id"] = step.source_attempt_id
         self._emit_attempt_event(
@@ -316,6 +394,7 @@ class RuntimeBackendExecutor:
                 runtime_id=self.runtime_id,
                 process_id=context.process_id,
                 parent_process_id=context.parent_process_id,
+                execution_id=context.execution_id,
                 attempt_id=context.attempt_id,
                 checkpoint_id=context.checkpoint_id,
                 event_type=event_type,
@@ -332,6 +411,7 @@ class RuntimeBackendExecutor:
             RuntimeEvent(
                 event_id=_next_event_id(self.event_store.list()),
                 runtime_id=self.runtime_id,
+                execution_id=self.execution_id,
                 process_id=step.process_id,
                 event_type=RuntimeEventType.PROCESS_STATUS_CHANGED,
                 timestamp=time.time(),
@@ -358,6 +438,7 @@ class RuntimeBackendExecutor:
             RuntimeEvent(
                 event_id=_next_event_id(self.event_store.list()),
                 runtime_id=self.runtime_id,
+                execution_id=self.execution_id,
                 event_type=event_type,
                 timestamp=time.time(),
                 status=status,

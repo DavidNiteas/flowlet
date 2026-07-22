@@ -20,10 +20,14 @@ from .backend import (
     write_runtime_status,
 )
 from .bundle import RuntimeManagerBundle
+from .directory import RuntimeDirectoryManager
+from .durable_store import RuntimeDurableStore, RuntimeIdentityMismatchError
 from .event_store import RuntimeEventCursor, RuntimeEventJsonlStore, RuntimeEventStore
 from .events import EventBuffer, sse_encode_event
 from .executor import RuntimeBackendExecutor
+from .identity import RuntimeExecutionKind, RuntimeExecutionRecord, RuntimeExecutionStatus, RuntimeIdentity
 from .info import RuntimeFileLayout, RuntimeInfo, runtime_info_payload
+from .ledger import RuntimeExecutionLedger
 from .manager_bridge import RuntimeManagerEventBridge
 from .process import (
     RuntimeCheckpointMode,
@@ -102,12 +106,20 @@ __all__ = [
     "RuntimeEventStatus",
     "RuntimeEventType",
     "RuntimeEventSidecarWriter",
+    "RuntimeDurableStore",
+    "RuntimeDirectoryManager",
     "RuntimeBackendExecutor",
     "RuntimeManagerEventBridge",
     "RuntimeFrameworkReducer",
+    "RuntimeIdentity",
+    "RuntimeIdentityMismatchError",
     "RuntimeInfo",
     "RuntimeIdempotency",
     "RuntimeManagerBundle",
+    "RuntimeExecutionKind",
+    "RuntimeExecutionLedger",
+    "RuntimeExecutionRecord",
+    "RuntimeExecutionStatus",
     "RuntimeObservation",
     "RuntimeProcess",
     "RuntimeProcessBase",

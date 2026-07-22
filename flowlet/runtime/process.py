@@ -223,6 +223,7 @@ class RuntimeProcessContext:
         process_id: str,
         event_store: RuntimeEventStore,
         parent_process_id: str | None = None,
+        execution_id: str | None = None,
         attempt_id: str | None = None,
         checkpoint_id: str | None = None,
         runtime_dir: str | Path | None = None,
@@ -232,6 +233,7 @@ class RuntimeProcessContext:
         self.runtime_id = runtime_id
         self.process_id = process_id
         self.parent_process_id = parent_process_id
+        self.execution_id = execution_id
         self.attempt_id = attempt_id
         self.checkpoint_id = checkpoint_id
         self.event_store = event_store
@@ -480,6 +482,7 @@ class RuntimeProcessContext:
             runtime_id=self.runtime_id,
             process_id=self.process_id,
             parent_process_id=self.parent_process_id,
+            execution_id=self.execution_id,
             attempt_id=self.attempt_id,
             checkpoint_id=checkpoint_id or self.checkpoint_id,
             event_type=event_type,

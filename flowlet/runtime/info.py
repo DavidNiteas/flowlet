@@ -16,6 +16,7 @@ class RuntimeFileLayout(BaseModel):
     job_spec: str = "job_spec.json"
     events: str = "events.jsonl"
     runtime_events: str = "runtime/events.runtime.jsonl"
+    durable_database: str = "runtime/runtime.db"
     processes: str = "runtime/processes.json"
     recovery_plans: str = "runtime/recovery_plans"
     snapshot: str = "snapshot.json"
