@@ -1101,5 +1101,18 @@ Keep these in business packages:
   execution, and command all become failed and that the backend session lease
   is released. Ruff passes for all MetaMSTools txn code and tests; the complete
   `tests/txn` suite passes at 86 tests.
-- Remaining work is HTTP/CLI continuation and rerun exposure, broader crash
-  injection, and final liver workspace acceptance.
+- Remaining work is rerun exposure, broader crash injection, and final liver
+  workspace acceptance.
+
+### Phase 11 Continued: Public Continue Control Plane
+
+- MetaMSTools now exposes asynchronous `continue_job`, HTTP
+  `POST /api/jobs/{job_id}/continue`, and a matching HTTP client operation.
+  It preserves both `job_id` and `runtime_id` and rejects concurrent continue
+  requests before dispatch.
+- MassLib4Search exposes the same HTTP/client spelling and retains `/resume`
+  as a compatibility alias. The existing package implementation still creates
+  a derived backend job record in the same runtime lineage; this is documented
+  as remaining identity convergence work.
+- MetaMSTools backend/client tests pass at 41; MassLib4Search backend/client
+  tests pass at 22. Ruff passes for both changed surfaces.

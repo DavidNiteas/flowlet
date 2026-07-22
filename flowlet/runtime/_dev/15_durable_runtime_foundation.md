@@ -245,7 +245,8 @@ submission and Ray node-start failures also close every attempt that was
 started before dispatch failed. A planning fault regression proves the root
 attempt, execution, and command all become failed before the backend lease is
 released. The complete MetaMSTools txn suite passes at 86 tests. Public
-continuation entrypoints and real-workspace acceptance remain open.
+HTTP/client continuation dispatches the same durable path asynchronously;
+rerun entrypoints and real-workspace acceptance remain open.
 
 MassLib4Search annotation execution now declares its stable run/study DAG in
 Flowlet and reports package-owned serial, thread, and Ray execution through
@@ -255,6 +256,12 @@ valid continuation nodes append skip events without new attempts, and failed
 runs continue under the same process id with the next attempt ordinal. The
 package still owns FSM work, artifact validation, aggregation, and output
 cleanup. Public rerun and final real-workspace acceptance remain open.
+
+The package also exposes `/continue` and a matching client method while
+retaining `/resume` as a compatibility alias. Its current continuation still
+uses a derived backend job id inside the stable runtime lineage; converging
+that compatibility identity with the original backend job remains migration
+work rather than a Flowlet concern.
 
 ## Acceptance
 
