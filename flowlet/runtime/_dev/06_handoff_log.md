@@ -594,6 +594,25 @@ Validation:
 
 - MetaMSTools and MassLib4Search CLI suites: 42 passed.
 
+### Phase 4/5 Completion Evidence
+
+- `RuntimeFrameworkReducer` has explicit deterministic-order coverage: the
+  same standard events reduced in forward or reverse input order produce an
+  identical projection.
+- Framework reducer coverage includes process state, progress, artifacts,
+  resources, child failure propagation, and persisted projection loading.
+- `RuntimeBackendExecutor` coverage includes registration/declaration events,
+  multi-process execution, hook dispatch, unsupported operations, failures,
+  manager bridge synchronization, resource sampling, manifests, and runtime
+  projection persistence.
+- Scheduling and resource allocation are intentionally not executor work; the
+  existing request/usage contracts are the handoff point for a future separate
+  scheduler.
+
+Validation:
+
+- `flowlet/tests/test_runtime.py`: 39 passed.
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

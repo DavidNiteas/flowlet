@@ -415,6 +415,45 @@ def test_runtime_framework_reducer_reconstructs_process_state(tmp_path):
     assert projection.artifact_index[0]["kind"] == "result"
 
 
+def test_runtime_framework_reducer_is_deterministic_for_unordered_input():
+    events = [
+        RuntimeEvent(
+            event_id=3,
+            runtime_id="runtime1",
+            process_id="process1",
+            event_type="artifact.produced",
+            timestamp=3.0,
+            payload={"path": "result.json", "kind": "result"},
+        ),
+        RuntimeEvent(
+            event_id=1,
+            runtime_id="runtime1",
+            process_id="process1",
+            event_type="process.created",
+            timestamp=1.0,
+            status=RuntimeEventStatus.PENDING,
+            status_class=RuntimeStatusClass.NOT_STARTED,
+            payload={"process_type": "example.process"},
+        ),
+        RuntimeEvent(
+            event_id=2,
+            runtime_id="runtime1",
+            process_id="process1",
+            event_type="process.status.changed",
+            timestamp=2.0,
+            status=RuntimeEventStatus.SUCCEEDED,
+            status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+            payload={"result": {"ok": True}},
+        ),
+    ]
+
+    reducer = RuntimeFrameworkReducer()
+    ordered_payload = reducer.reduce(events).model_dump(mode="json")
+    reversed_payload = reducer.reduce(list(reversed(events))).model_dump(mode="json")
+
+    assert ordered_payload == reversed_payload
+
+
 def test_runtime_framework_reducer_summarizes_failure_and_writes_projection(tmp_path):
     store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
     context = RuntimeProcessContext(runtime_id="runtime1", process_id="process1", event_store=store)

@@ -165,7 +165,7 @@ Introduce process as the minimum runtime operation unit.
 
 ## Phase 4: Runtime Projection Reducers
 
-Status: in progress.
+Status: completed.
 
 ### Goal
 
@@ -207,15 +207,15 @@ Derive runtime state from standard events.
 - `RuntimeStore.write_projection(...)` writes a projection payload without touching business `snapshot.json` or `monitor_snapshot.json`.
 - `RuntimeProjectionPolicy` makes parent/child terminal-state propagation explicit.
 - `RuntimeStore.load_projection()` and `load_runtime_projection(...)` provide basic projection loading.
-
-### Remaining Phase 4 Work
-
-- Add business reducers in MetaMSTools and MassLib4Search only after the framework projection stabilizes.
-- Expand projection compatibility tests before CLI/TUI readers consume `runtime/projection.json`.
+- Reducer tests cover stable process reconstruction, child failure propagation,
+  JSON projection persistence, and identical projections from ordered and
+  reversed event input.
+- Business monitor adapters are package-owned and are implemented without
+  extending the framework projection with domain hierarchy.
 
 ## Phase 5: Runtime Backend Executor Prototype
 
-Status: in progress.
+Status: completed.
 
 ### Goal
 
@@ -260,10 +260,12 @@ Provide a framework runtime backend capable of executing registered processes an
   writes `resource.sampled`, and persists the resulting projection without
   allocating or scheduling resources.
 
-### Remaining Phase 5 Work
+### Follow-on Boundary
 
-- Add scheduler/resource integration only after process resource semantics are stable.
-- Keep queueing/threading/business lifecycle policy in business packages or explicit adapters.
+Scheduler/resource allocation, queues, threads, and business lifecycle policy
+are intentionally outside this executor prototype. A future scheduler may read
+the existing process request/usage contracts, but it must remain a separately
+designed framework component rather than expanding business backends here.
 
 ## Phase 6: MetaMSTools Compatibility Adapter
 
