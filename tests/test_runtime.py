@@ -43,6 +43,7 @@ def test_runtime_info_payload_is_json_safe(tmp_path):
     assert restored.engine == "ExampleEngine"
     assert restored.job_type == "example.job"
     assert restored.runtime_files.progress == "runtime/progress.json"
+    assert restored.runtime_files.runtime_events == "runtime/events.runtime.jsonl"
 
 
 def test_runtime_store_writes_standard_files_and_lists_artifacts(tmp_path):
@@ -147,6 +148,26 @@ def test_runtime_event_jsonl_store_appends_loads_and_waits(tmp_path):
     assert stored.event_id == 1
     assert [item.event_id for item in restored.list()] == [1, 2]
     assert [item.event_type for item in restored.wait_for_next(since=1, timeout=0.01)] == ["process.completed"]
+
+
+def test_runtime_store_appends_standard_runtime_event_sidecar(tmp_path):
+    store = RuntimeStore(tmp_path / "runtime")
+    store.append_runtime_event(
+        RuntimeEvent(
+            event_id=1,
+            runtime_id="runtime1",
+            process_id="process1",
+            event_type="process.started",
+            timestamp=123.0,
+        )
+    )
+
+    restored = store.runtime_event_store()
+    restored.load()
+    artifacts = list_runtime_artifacts(store.runtime_dir)
+
+    assert [event.event_type for event in restored.list()] == ["process.started"]
+    assert {artifact["path"] for artifact in artifacts} == {"runtime/events.runtime.jsonl"}
 
 
 def test_txn_event_payload_adapter_round_trips_legacy_shape():

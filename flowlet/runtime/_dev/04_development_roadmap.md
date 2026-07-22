@@ -94,11 +94,12 @@ Make standard events storable and compatible with current `TxnEvent`.
 - `manager_record_to_runtime_event(...)` converts current Flowlet progress, signal, log, stream, and telemetry manager records to standard events.
 - Tests include current-style MetaMSTools and MassLib4Search legacy event payload shapes.
 - Business backend integration is not implemented yet.
-- The sidecar filename decision is still open. Tests currently use `events.runtime.jsonl` as a candidate name.
+- The standard event sidecar path is `runtime/events.runtime.jsonl`.
+- `RuntimeFileLayout.runtime_events` exposes this path.
+- `RuntimeStore.runtime_event_store()` and `RuntimeStore.append_runtime_event(...)` write to this sidecar.
 
 ### Remaining Phase 2 Work
 
-- Decide and document the initial standard event sidecar path.
 - Add opt-in sidecar writing to current business backends.
 - Keep legacy `events.jsonl` unchanged until readers migrate.
 - Add fixtures from actual runtime files when a stable fixture location is selected.

@@ -187,12 +187,13 @@ Flowlet adds `RuntimeEvent` and adapters:
 
 Keep current `events.jsonl` format until readers are migrated.
 
-Add one of:
+Add standard events to:
 
-- `runtime/events.runtime.jsonl`, or
-- versioned event envelope in existing `events.jsonl` with backward-compatible loader.
+```text
+runtime/events.runtime.jsonl
+```
 
-Decision must be made before implementation. The safer route is a sidecar file first.
+This is the selected first migration path. It keeps legacy `events.jsonl` unchanged and lets current CLI/TUI/API readers continue using existing projections.
 
 ### Phase C: Projection Reducers
 
@@ -236,4 +237,3 @@ Expected:
 - `runtime-snapshot print --format json` still includes `runtime_info`, `monitor`, and `snapshot`.
 - Existing annotation outputs remain under the study workspace.
 - Existing `.metams` and `.annotation` runtime layouts remain readable.
-

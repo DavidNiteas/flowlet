@@ -55,6 +55,9 @@ Added:
 - `txn_event_payload_to_runtime_event(...)`
 - `runtime_event_to_txn_event_payload(...)`
 - `manager_record_to_runtime_event(...)`
+- `RuntimeFileLayout.runtime_events = "runtime/events.runtime.jsonl"`
+- `RuntimeStore.runtime_event_store()`
+- `RuntimeStore.append_runtime_event(...)`
 
 Added tests for:
 
@@ -63,6 +66,7 @@ Added tests for:
 - RuntimeEvent back to legacy dictionary conversion.
 - Current-style MetaMSTools and MassLib4Search legacy event payload shapes.
 - Flowlet manager record conversion for progress, signal, log, stream, and telemetry.
+- Standard RuntimeEvent sidecar writing through `RuntimeStore`.
 
 Validation commands:
 
@@ -76,7 +80,7 @@ Result:
 
 ```text
 All checks passed.
-11 passed.
+12 passed.
 ```
 
 ### Open Work
@@ -87,10 +91,9 @@ Phase 2 should start only after that review.
 
 Recommended next steps:
 
-1. Decide whether standard events should initially use a sidecar file such as `runtime/events.runtime.jsonl`.
-2. Add an opt-in sidecar writer in current business backends without changing their legacy `events.jsonl`.
-3. Add fixtures from actual runtime files once fixture ownership is decided.
-4. Keep CLI/TUI readers on existing projections until event-derived projections are implemented.
+1. Add an opt-in sidecar writer in current business backends without changing their legacy `events.jsonl`.
+2. Add fixtures from actual runtime files once fixture ownership is decided.
+3. Keep CLI/TUI readers on existing projections until event-derived projections are implemented.
 
 ### Boundary Reminder
 

@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import list_runtime_artifacts
+from .event_store import RuntimeEventJsonlStore
 from .info import RuntimeFileLayout
+from .schema import RuntimeEvent
 
 
 def write_json(path: str | Path, payload: Any) -> None:
@@ -47,6 +49,14 @@ class RuntimeStore:
 
     def write_signals(self, payload: Any) -> None:
         write_json(self.path(self.layout.signals), payload)
+
+    def runtime_event_store(self) -> RuntimeEventJsonlStore:
+        """Return the standard sidecar RuntimeEvent JSONL store."""
+        return RuntimeEventJsonlStore(self.path(self.layout.runtime_events))
+
+    def append_runtime_event(self, event: RuntimeEvent) -> RuntimeEvent:
+        """Append one standard RuntimeEvent to the sidecar event stream."""
+        return self.runtime_event_store().append(event)
 
     def artifacts(self) -> list[dict[str, Any]]:
         return list_runtime_artifacts(self.runtime_dir)

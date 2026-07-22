@@ -105,7 +105,9 @@ Existing files become projections or compatibility outputs:
 
 ```text
 runtime_info.json        runtime/execution metadata
-events.jsonl             canonical event stream
+runtime/events.runtime.jsonl
+                         standard RuntimeEvent sidecar stream during migration
+events.jsonl             legacy compatibility event stream
 status.json              compatibility process/execution state projection
 snapshot.json            full runtime projection
 monitor_snapshot.json    monitor-friendly projection
@@ -117,6 +119,14 @@ runtime/telemetry.jsonl  telemetry projection
 
 The migration must keep existing files during compatibility phases.
 
+During the compatibility phases, the canonical standard-event candidate is the sidecar file:
+
+```text
+runtime/events.runtime.jsonl
+```
+
+Existing `events.jsonl` remains the legacy TxnEvent-compatible stream until MetaMSTools and MassLib4Search readers migrate.
+
 ## Standard Runtime Layout Direction
 
 The current layout remains valid:
@@ -125,6 +135,7 @@ The current layout remains valid:
 <runtime_dir>/
   runtime_info.json
   events.jsonl
+  runtime/events.runtime.jsonl
   job_spec.json
   status.json
   snapshot.json
@@ -157,4 +168,3 @@ The future layout may add process-oriented shards without breaking current reade
 ```
 
 The current layout must remain readable throughout migration.
-
