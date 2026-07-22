@@ -37,7 +37,14 @@ from .process import (
     RuntimeUnsupportedOperationError,
     runtime_process_spec_payload,
 )
-from .projection import RuntimeFrameworkReducer, RuntimeProjection, RuntimeReducer, runtime_projection_payload
+from .projection import (
+    RuntimeFrameworkReducer,
+    RuntimeProjection,
+    RuntimeProjectionPolicy,
+    RuntimeReducer,
+    load_runtime_projection,
+    runtime_projection_payload,
+)
 from .schema import (
     RuntimeErrorInfo,
     RuntimeEvent,
@@ -74,6 +81,7 @@ __all__ = [
     "RuntimeProcessSpec",
     "RuntimeProcessState",
     "RuntimeProjection",
+    "RuntimeProjectionPolicy",
     "RuntimeProgress",
     "RuntimeReducer",
     "RuntimeResourceRequest",
@@ -86,6 +94,7 @@ __all__ = [
     "TERMINAL_JOB_STATUSES",
     "export_runtime_manager_files",
     "list_runtime_artifacts",
+    "load_runtime_projection",
     "manager_record_to_runtime_event",
     "mirror_runtime_events",
     "model_dump_json_safe",

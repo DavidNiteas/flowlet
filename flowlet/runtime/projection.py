@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
@@ -29,6 +30,13 @@ class RuntimeProjection(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class RuntimeProjectionPolicy(BaseModel):
+    """Framework projection behavior switches."""
+
+    propagate_child_failure: bool = True
+    propagate_child_cancelled: bool = True
+
+
 class RuntimeReducer(Protocol):
     """Protocol for reducers that derive projections from RuntimeEvent streams."""
 
@@ -39,6 +47,9 @@ class RuntimeReducer(Protocol):
 
 class RuntimeFrameworkReducer:
     """Business-neutral reducer for standard Flowlet runtime events."""
+
+    def __init__(self, policy: RuntimeProjectionPolicy | None = None) -> None:
+        self.policy = policy or RuntimeProjectionPolicy()
 
     def reduce(self, events: list[RuntimeEvent]) -> RuntimeProjection:
         """Reduce a list of standard events into framework state."""
@@ -51,13 +62,27 @@ class RuntimeFrameworkReducer:
             _apply_process_event(projection, event)
             _apply_runtime_event(projection, event)
             _apply_indexes(projection, event)
-        _finalize_projection(projection)
+        _finalize_projection(projection, self.policy)
         return projection
 
 
-def runtime_projection_payload(events: list[RuntimeEvent]) -> dict[str, Any]:
+def runtime_projection_payload(
+    events: list[RuntimeEvent],
+    *,
+    policy: RuntimeProjectionPolicy | None = None,
+) -> dict[str, Any]:
     """Build a JSON-safe runtime projection payload from standard events."""
-    return RuntimeFrameworkReducer().reduce(events).model_dump(mode="json")
+    return RuntimeFrameworkReducer(policy=policy).reduce(events).model_dump(mode="json")
+
+
+def load_runtime_projection(path: str | Path) -> RuntimeProjection | None:
+    """Load a persisted runtime projection when it exists."""
+    projection_path = Path(path)
+    if projection_path.is_dir():
+        projection_path = projection_path / "runtime" / "projection.json"
+    if not projection_path.exists():
+        return None
+    return RuntimeProjection.model_validate_json(projection_path.read_text(encoding="utf-8"))
 
 
 def _apply_process_event(projection: RuntimeProjection, event: RuntimeEvent) -> None:
@@ -123,7 +148,9 @@ def _apply_indexes(projection: RuntimeProjection, event: RuntimeEvent) -> None:
         projection.artifact_index.append(artifact)
 
 
-def _finalize_projection(projection: RuntimeProjection) -> None:
+def _finalize_projection(projection: RuntimeProjection, policy: RuntimeProjectionPolicy) -> None:
+    if policy.propagate_child_failure or policy.propagate_child_cancelled:
+        _propagate_child_terminal_state(projection, policy)
     projection.active_process_ids = sorted(
         process_id
         for process_id, state in projection.processes.items()
@@ -144,6 +171,59 @@ def _finalize_projection(projection: RuntimeProjection) -> None:
     elif projection.processes and projection.terminal_success_count == len(projection.processes):
         projection.status = RuntimeEventStatus.SUCCEEDED
         projection.status_class = RuntimeStatusClass.TERMINAL_SUCCESS
+
+
+def _propagate_child_terminal_state(projection: RuntimeProjection, policy: RuntimeProjectionPolicy) -> None:
+    changed = True
+    while changed:
+        changed = False
+        for child in list(projection.processes.values()):
+            if child.parent_process_id is None:
+                continue
+            parent = projection.processes.get(child.parent_process_id)
+            if parent is None:
+                continue
+            if policy.propagate_child_failure and child.status_class == RuntimeStatusClass.TERMINAL_FAILURE:
+                changed = _update_parent_terminal_state(
+                    projection,
+                    parent,
+                    status=RuntimeEventStatus.FAILED,
+                    status_class=RuntimeStatusClass.TERMINAL_FAILURE,
+                    error=child.error,
+                ) or changed
+            if policy.propagate_child_cancelled and child.status_class == RuntimeStatusClass.TERMINAL_CANCELLED:
+                changed = _update_parent_terminal_state(
+                    projection,
+                    parent,
+                    status=RuntimeEventStatus.CANCELLED,
+                    status_class=RuntimeStatusClass.TERMINAL_CANCELLED,
+                    error=child.error,
+                ) or changed
+
+
+def _update_parent_terminal_state(
+    projection: RuntimeProjection,
+    parent: RuntimeProcessState,
+    *,
+    status: RuntimeEventStatus,
+    status_class: RuntimeStatusClass,
+    error: RuntimeErrorInfo | None,
+) -> bool:
+    if parent.status_class == status_class:
+        return False
+    if parent.status_class in {
+        RuntimeStatusClass.TERMINAL_FAILURE,
+        RuntimeStatusClass.TERMINAL_CANCELLED,
+    }:
+        return False
+    projection.processes[parent.process_id] = parent.model_copy(
+        update={
+            "status": status,
+            "status_class": status_class,
+            "error": parent.error or error,
+        }
+    )
+    return True
 
 
 def _count_processes(projection: RuntimeProjection, status_class: RuntimeStatusClass) -> int:

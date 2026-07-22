@@ -9,6 +9,7 @@ from typing import Any
 from .artifacts import list_runtime_artifacts
 from .event_store import RuntimeEventJsonlStore
 from .info import RuntimeFileLayout
+from .projection import RuntimeProjection
 from .schema import RuntimeEvent
 
 
@@ -49,6 +50,12 @@ class RuntimeStore:
 
     def write_projection(self, payload: Any) -> None:
         write_json(self.path(self.layout.projection), payload)
+
+    def load_projection(self) -> RuntimeProjection | None:
+        path = self.path(self.layout.projection)
+        if not path.exists():
+            return None
+        return RuntimeProjection.model_validate_json(path.read_text(encoding="utf-8"))
 
     def write_signals(self, payload: Any) -> None:
         write_json(self.path(self.layout.signals), payload)

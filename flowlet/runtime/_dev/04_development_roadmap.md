@@ -199,12 +199,13 @@ Derive runtime state from standard events.
   - progress summary
 - `RuntimeFileLayout.projection` defines `runtime/projection.json`.
 - `RuntimeStore.write_projection(...)` writes a projection payload without touching business `snapshot.json` or `monitor_snapshot.json`.
+- `RuntimeProjectionPolicy` makes parent/child terminal-state propagation explicit.
+- `RuntimeStore.load_projection()` and `load_runtime_projection(...)` provide basic projection loading.
 
 ### Remaining Phase 4 Work
 
-- Add parent/child failure propagation rules that are explicit and configurable.
-- Add projection loading helpers if CLI/TUI readers start consuming `runtime/projection.json`.
 - Add business reducers in MetaMSTools and MassLib4Search only after the framework projection stabilizes.
+- Expand projection compatibility tests before CLI/TUI readers consume `runtime/projection.json`.
 
 ## Phase 5: Runtime Backend Executor Prototype
 

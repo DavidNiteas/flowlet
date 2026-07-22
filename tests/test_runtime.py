@@ -21,6 +21,7 @@ from flowlet.runtime import (
     RuntimeProcessSpec,
     RuntimeProgress,
     RuntimeProjection,
+    RuntimeProjectionPolicy,
     RuntimeReducer,
     RuntimeResourceRequest,
     RuntimeRetryPolicy,
@@ -29,6 +30,7 @@ from flowlet.runtime import (
     RuntimeStore,
     RuntimeUnsupportedOperationError,
     list_runtime_artifacts,
+    load_runtime_projection,
     manager_record_to_runtime_event,
     runtime_event_payload,
     runtime_event_to_txn_event_payload,
@@ -312,13 +314,44 @@ def test_runtime_framework_reducer_summarizes_failure_and_writes_projection(tmp_
     projection = RuntimeProjection.model_validate(projection_payload)
     runtime_store = RuntimeStore(tmp_path / "runtime")
     runtime_store.write_projection(projection_payload)
+    restored_projection = runtime_store.load_projection()
+    restored_from_path = load_runtime_projection(runtime_store.runtime_dir)
     artifacts = list_runtime_artifacts(runtime_store.runtime_dir)
 
     assert projection.status == RuntimeEventStatus.FAILED
     assert projection.status_class == RuntimeStatusClass.TERMINAL_FAILURE
     assert projection.terminal_failure_count == 1
     assert projection.error_summary[0].type == "ExampleError"
+    assert restored_projection == projection
+    assert restored_from_path == projection
     assert {artifact["path"] for artifact in artifacts} == {"runtime/projection.json"}
+
+
+def test_runtime_framework_reducer_propagates_child_failure_by_policy(tmp_path):
+    store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
+    parent = RuntimeProcessContext(runtime_id="runtime1", process_id="parent", event_store=store)
+    child = RuntimeProcessContext(
+        runtime_id="runtime1",
+        process_id="child",
+        parent_process_id="parent",
+        event_store=store,
+    )
+    parent.emit_status(RuntimeEventStatus.RUNNING)
+    child.emit_status(RuntimeEventStatus.RUNNING)
+    child.emit_error(RuntimeErrorInfo(type="ChildError", message="bad child"))
+
+    default_projection = RuntimeFrameworkReducer().reduce(store.list())
+    no_propagation = RuntimeFrameworkReducer(
+        policy=RuntimeProjectionPolicy(propagate_child_failure=False)
+    ).reduce(store.list())
+
+    assert default_projection.processes["child"].status_class == RuntimeStatusClass.TERMINAL_FAILURE
+    assert default_projection.processes["parent"].status_class == RuntimeStatusClass.TERMINAL_FAILURE
+    assert default_projection.processes["parent"].error is not None
+    assert default_projection.processes["parent"].error.type == "ChildError"
+    assert default_projection.terminal_failure_count == 2
+    assert no_propagation.processes["parent"].status_class == RuntimeStatusClass.ACTIVE
+    assert no_propagation.terminal_failure_count == 1
 
 
 def test_runtime_process_base_reports_unsupported_operation(tmp_path):

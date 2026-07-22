@@ -254,9 +254,12 @@ Added:
 - `flowlet.runtime.projection.RuntimeProjection`
 - `RuntimeReducer`
 - `RuntimeFrameworkReducer`
+- `RuntimeProjectionPolicy`
 - `runtime_projection_payload(...)`
+- `load_runtime_projection(...)`
 - `RuntimeFileLayout.projection = "runtime/projection.json"`
 - `RuntimeStore.write_projection(...)`
+- `RuntimeStore.load_projection()`
 
 Scope:
 
@@ -277,9 +280,8 @@ The current framework reducer derives:
 
 Remaining Phase 4 work:
 
-- Make parent/child failure propagation rules explicit.
-- Add projection loading helpers if readers start consuming `runtime/projection.json`.
 - Keep business reducers out of Flowlet.
+- Expand projection compatibility tests before CLI/TUI readers consume `runtime/projection.json`.
 
 Validation commands:
 
@@ -293,7 +295,7 @@ Result:
 
 ```text
 All checks passed.
-23 passed.
+24 passed.
 ```
 
 ### Boundary Reminder
