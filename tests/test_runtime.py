@@ -9,6 +9,7 @@ from flowlet.runtime import (
     RuntimeErrorInfo,
     RuntimeEvent,
     RuntimeEventJsonlStore,
+    RuntimeEventSidecarWriter,
     RuntimeEventStatus,
     RuntimeInfo,
     RuntimeProgress,
@@ -167,6 +168,72 @@ def test_runtime_store_appends_standard_runtime_event_sidecar(tmp_path):
     artifacts = list_runtime_artifacts(store.runtime_dir)
 
     assert [event.event_type for event in restored.list()] == ["process.started"]
+    assert {artifact["path"] for artifact in artifacts} == {"runtime/events.runtime.jsonl"}
+
+
+def test_runtime_event_sidecar_writer_disabled_does_not_write(tmp_path):
+    writer = RuntimeEventSidecarWriter(tmp_path / "runtime", runtime_id="runtime1", enabled=False)
+    event = RuntimeEvent(
+        event_id=1,
+        runtime_id="runtime1",
+        process_id="process1",
+        event_type="process.started",
+        timestamp=123.0,
+    )
+
+    returned = writer.append_event(event)
+
+    assert returned is event
+    assert not (tmp_path / "runtime" / "runtime" / "events.runtime.jsonl").exists()
+
+
+def test_runtime_event_sidecar_writer_mirrors_legacy_payload(tmp_path):
+    writer = RuntimeEventSidecarWriter(tmp_path / "runtime", runtime_id="runtime1")
+
+    writer.append_legacy_event(
+        {
+            "event_id": 2,
+            "job_id": "job1",
+            "timestamp": 124.0,
+            "event_type": "progress",
+            "payload": {"status": "running", "current": 1, "total": 2},
+        },
+        metadata={"source": "legacy-buffer"},
+    )
+    store = writer.store()
+    store.load()
+
+    [event] = store.list()
+    assert event.runtime_id == "runtime1"
+    assert event.process_id == "job1"
+    assert event.event_type == "process.progressed"
+    assert event.metadata["source"] == "legacy-buffer"
+    assert event.metadata["legacy_event_type"] == "progress"
+
+
+def test_runtime_event_sidecar_writer_mirrors_manager_record(tmp_path):
+    writer = RuntimeEventSidecarWriter(tmp_path / "runtime", runtime_id="runtime1", process_id="process1")
+
+    writer.append_manager_record(
+        {
+            "task_id": "task1",
+            "description": "task 1",
+            "current": 2,
+            "total": 4,
+            "status": "running",
+        },
+        record_type="progress",
+        event_id=3,
+    )
+    store = writer.store()
+    store.load()
+    artifacts = list_runtime_artifacts(tmp_path / "runtime")
+
+    [event] = store.list()
+    assert event.process_id == "process1"
+    assert event.event_type == "process.progressed"
+    assert event.progress is not None
+    assert event.progress.percent == 50.0
     assert {artifact["path"] for artifact in artifacts} == {"runtime/events.runtime.jsonl"}
 
 

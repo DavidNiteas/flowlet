@@ -67,6 +67,7 @@ Added tests for:
 - Current-style MetaMSTools and MassLib4Search legacy event payload shapes.
 - Flowlet manager record conversion for progress, signal, log, stream, and telemetry.
 - Standard RuntimeEvent sidecar writing through `RuntimeStore`.
+- Opt-in sidecar mirroring through `RuntimeEventSidecarWriter`.
 
 Validation commands:
 
@@ -83,15 +84,51 @@ All checks passed.
 12 passed.
 ```
 
+### Continued Progress: Sidecar Writer
+
+Added:
+
+- `flowlet.runtime.sidecar.RuntimeEventSidecarWriter`
+
+The writer can append:
+
+- already-normalized `RuntimeEvent` objects
+- legacy `TxnEvent`-like dictionary payloads
+- Flowlet manager records for progress, signal, log, stream, and telemetry
+
+This keeps the current legacy `events.jsonl` stream unchanged while allowing
+business packages to opt into the standard sidecar stream at
+`runtime/events.runtime.jsonl`.
+
+Added tests for:
+
+- disabled sidecar writer no-op behavior
+- legacy payload mirroring
+- manager record mirroring
+- artifact listing for the standard sidecar file
+
+Validation commands:
+
+```bash
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__init__.py flowlet/tests/test_runtime.py --fix
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__init__.py flowlet/tests/test_runtime.py
+pixi run -e dev-all-gpu pytest flowlet/tests/test_runtime.py -q
+```
+
+Result:
+
+```text
+All checks passed.
+15 passed.
+```
+
 ### Open Work
 
 Phase 1 is not fully complete until the schema is reviewed against real MetaMSTools and MassLib4Search event payloads.
 
-Phase 2 should start only after that review.
-
 Recommended next steps:
 
-1. Add an opt-in sidecar writer in current business backends without changing their legacy `events.jsonl`.
+1. Integrate `RuntimeEventSidecarWriter` in current business backends without changing their legacy `events.jsonl`.
 2. Add fixtures from actual runtime files once fixture ownership is decided.
 3. Keep CLI/TUI readers on existing projections until event-derived projections are implemented.
 

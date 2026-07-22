@@ -31,6 +31,7 @@ from .schema import (
     RuntimeStatusClass,
     runtime_event_payload,
 )
+from .sidecar import RuntimeEventSidecarWriter
 from .snapshot import RuntimeSnapshotLoader, RuntimeSnapshotView
 from .store import RuntimeStore, write_json
 
@@ -45,6 +46,7 @@ __all__ = [
     "RuntimeEventJsonlStore",
     "RuntimeEventStore",
     "RuntimeEventStatus",
+    "RuntimeEventSidecarWriter",
     "RuntimeInfo",
     "RuntimeManagerBundle",
     "RuntimeProgress",

@@ -97,10 +97,15 @@ Make standard events storable and compatible with current `TxnEvent`.
 - The standard event sidecar path is `runtime/events.runtime.jsonl`.
 - `RuntimeFileLayout.runtime_events` exposes this path.
 - `RuntimeStore.runtime_event_store()` and `RuntimeStore.append_runtime_event(...)` write to this sidecar.
+- `RuntimeEventSidecarWriter` provides an opt-in bridge for:
+  - already-normalized `RuntimeEvent` objects
+  - legacy `TxnEvent`-like dictionaries
+  - Flowlet manager records (`progress`, `signal`, `log`, `stream`, `telemetry`)
+- The sidecar writer is framework-only and does not import MetaMSTools or MassLib4Search.
 
 ### Remaining Phase 2 Work
 
-- Add opt-in sidecar writing to current business backends.
+- Integrate the opt-in sidecar writer in current business backends.
 - Keep legacy `events.jsonl` unchanged until readers migrate.
 - Add fixtures from actual runtime files when a stable fixture location is selected.
 
