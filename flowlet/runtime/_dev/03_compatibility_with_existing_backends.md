@@ -142,6 +142,9 @@ Compatibility rule:
 - Keep existing `JobSnapshot.runs` and `JobMonitorSnapshot.runs`.
 - Add runtime event generation behind the existing backend.
 - Business monitor reducers can consume standard events but still output current schema.
+- Persisted MetaMSTools jobs declare one root `metams.openms.analysis` process
+  in `runtime/processes.json`; this is an observation contract, not an OpenMS
+  stage hierarchy replacement.
 
 ## Process Mapping: MassLib4Search
 
@@ -171,6 +174,9 @@ Compatibility rule:
 - Keep annotation-specific result paths and workspace semantics in MassLib4Search.
 - Represent business steps as process metadata, not Flowlet primitives.
 - Allow MassLib4Search to provide business reducers for annotation monitor summaries.
+- Persisted MassLib4Search jobs declare one root process whose type is the
+  existing job type, such as `annotation.search` or `search_lib.build`; this
+  does not redefine annotation subjects, FSM stages, or resume policy.
 
 ## Compatibility Phases
 

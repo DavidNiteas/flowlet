@@ -552,6 +552,21 @@ Validation:
 - Both projection-aware runtime-snapshot CLIs succeed and report 3 completed
   units with no remaining work.
 
+### Continued Progress: Business Root Process Declarations
+
+- MetaMSTools now writes one root `metams.openms.analysis` process spec for
+  every persisted txn job.
+- MassLib4Search now writes one root process spec using its existing job type,
+  including `annotation.search` and `search_lib.build`.
+- These declarations use the same job id as the standard sidecar root process.
+  They describe the business boundary without moving OpenMS, annotation runs,
+  FSM stages, workspace layout, or resume policy into Flowlet.
+
+Validation:
+
+- MetaMSTools and MassLib4Search backend suites: 34 passed.
+- MetaMSTools and MassLib4Search CLI suites: 41 passed.
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

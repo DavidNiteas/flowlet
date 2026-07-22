@@ -284,6 +284,15 @@ Adapt MetaMSTools runtime backend to emit standard events without changing busin
 - New standard event stream exists and validates.
 - Business monitor output remains unchanged.
 
+### Current Implementation Notes
+
+- MetaMSTools keeps its current txn/OpenMS execution path and legacy
+  `TxnEvent` stream, while writing the standard sidecar and projection.
+- Each persisted job now declares the root
+  `metams.openms.analysis` `RuntimeProcessSpec` in `runtime/processes.json`.
+- Run/stage hierarchy remains business-owned in `JobSnapshot` and is not
+  fabricated from the root declaration.
+
 ## Phase 7: MassLib4Search Compatibility Adapter
 
 ### Goal
@@ -304,6 +313,15 @@ Adapt MassLib4Search runtime backend to emit standard events without changing an
 - Existing annotation workflow test passes.
 - Real liver sample `.annotation/spec_spec_unispec_pos/runtime` snapshot still works.
 - New standard event stream exists and validates.
+
+### Current Implementation Notes
+
+- MassLib4Search keeps annotation/search execution and resume semantics in its
+  existing backend while writing the standard sidecar and projection.
+- Each persisted job writes one root `RuntimeProcessSpec` whose process type is
+  the existing job type, such as `annotation.search` or `search_lib.build`.
+- Annotation studies, runs, and FSM stages remain business subjects until they
+  need independently addressable process operations.
 
 ## Phase 8: Reader Migration
 
