@@ -581,6 +581,19 @@ Validation:
 
 - Flowlet runtime plus both business backend suites: 72 passed.
 
+### Continued Progress: Read-only TUI Framework Inspection
+
+- MetaMSTools runtime TUI now has a `Process Specs` page showing the standard
+  projection summary and persisted process declarations.
+- MassLib4Search adds those same framework items to its existing `Spec` page.
+- The UI does not use declarations to calculate business monitor state or
+  execute lifecycle controls; OpenMS/annotation run-stage interpretation
+  remains package-owned.
+
+Validation:
+
+- MetaMSTools and MassLib4Search CLI suites: 42 passed.
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

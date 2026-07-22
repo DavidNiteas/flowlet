@@ -49,6 +49,12 @@ continues to use business snapshots and legacy business events. A UI migration
 requires a package-owned presentation adapter; it must not infer runs, stages,
 or annotation state from framework process ids.
 
+Current runtime TUI integration is intentionally read-only. It may show a
+framework projection summary and process declarations, but its business
+overview, run/stage/task pages, and any future lifecycle controls continue to
+use package-owned monitor and backend contracts. A displayed capability does
+not authorize Flowlet to invoke a business operation.
+
 ## MetaMSTools Adapter
 
 Inputs:

@@ -354,6 +354,10 @@ Move CLI/TUI/runtime-snapshot readers toward event-derived projections.
 - A projection is used only with a valid business `JobSnapshot` or `JobRecord`.
 - `RuntimeEventStore` now supports standard numeric and string cursors, waiting,
   streaming, and standard SSE encoding without relying on legacy `job_state`.
+- MetaMSTools TUI exposes a read-only `Process Specs` page, while
+  MassLib4Search adds the same framework declaration and projection summary to
+  its existing `Spec` page. These pages do not alter business monitor counts or
+  offer lifecycle controls.
 
 ### Acceptance
 
