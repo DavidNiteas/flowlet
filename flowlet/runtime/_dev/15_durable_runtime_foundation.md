@@ -5,8 +5,9 @@
 Phase 11 in progress. Stable identity contracts, the first transactional
 event/ledger store, recoverable runtime-directory reset, incremental
 projections, rebuildable ledgers, backend-session leases, and interrupted-work
-reconciliation are implemented. DAG continuation, command idempotency, and
-business backend migration remain open.
+reconciliation, durable commands, and generic DAG continuation selection are
+implemented. Execution-wave orchestration and business backend migration
+remain open.
 
 ## Objective
 
@@ -159,6 +160,34 @@ owned by prior sessions. It does not turn backend loss into a business failure,
 select retry/resume, or validate artifacts. Reconciliation is idempotent: once
 the stale records are terminal, another call appends nothing.
 
+## Durable Commands
+
+`RuntimeCommandRecord` gives control requests a stable idempotency key. The
+first reservation appends `command.accepted`; replaying an identical request
+returns the same receipt, while reusing the id for a different request fails.
+Terminal results append `command.succeeded` or `command.failed` and are also
+idempotent. `RuntimeCommandReducer` and `rebuild_commands(replace=True)` keep
+the command table rebuildable from canonical events.
+
+This is durable request deduplication, not a claim that arbitrary external
+side effects are exactly-once. A command left accepted after a crash is
+resolved through process idempotency, checkpoint, cleanup, and reconciliation
+contracts.
+
+## DAG Continuation Selection
+
+`RuntimeContinuationSelector` combines the process DAG, framework projection,
+and package-supplied `RuntimeContinuationAssessment` evidence. Packages report
+whether completed outputs remain valid, which committed checkpoint is usable,
+and whether required cleanup ran. Flowlet computes the affected downstream
+closure, skips valid ancestors and unrelated nodes, and selects
+resume/retry/restart under declared capabilities and retry limits.
+
+A continuation selector rejects a changed target `runtime_id`.
+`REQUIRES_CLEANUP` retry/restart actions remain blocked until the package
+explicitly confirms cleanup. Flowlet does not inspect or delete business
+artifacts itself.
+
 ## Implemented Baseline
 
 - `RuntimeIdentity`, `RuntimeExecutionKind`, `RuntimeExecutionStatus`, and
@@ -180,6 +209,8 @@ the stale records are terminal, another call appends nothing.
 - Event-only ledger rebuild and transactional materialization replacement.
 - Exclusive backend-session leases with atomic stale-owner takeover.
 - Append-only, idempotent interrupted execution/attempt reconciliation.
+- Idempotency-keyed, event-rebuildable durable command receipts.
+- Minimum affected-DAG continuation selection with an explicit cleanup gate.
 
 Current tests prove four store instances append 40 unique events with canonical
 sequences `0..39`, a reopened store preserves identity and ledger state,
@@ -190,13 +221,11 @@ session reconciliation. Flowlet runtime tests pass at 72 tests.
 
 ## Remaining Phases
 
-1. Add durable command idempotency and bind rerun reset to the live lease.
-2. Add generic DAG continuation selection and enforce cleanup requirements.
-3. Refactor the reference executor around execution waves and the durable
+1. Refactor the reference executor around execution waves and the durable
    store.
-4. Migrate MetaMSTools txn root and OpenMS run processes.
-5. Migrate MassLib4Search annotation runtime, run processes, and study process.
-6. Switch package standard readers to the durable store, retain declared
+2. Migrate MetaMSTools txn root and OpenMS run processes.
+3. Migrate MassLib4Search annotation runtime, run processes, and study process.
+4. Switch package standard readers to the durable store, retain declared
    legacy adapters, and run crash-injection plus real-workspace acceptance.
 
 ## Acceptance

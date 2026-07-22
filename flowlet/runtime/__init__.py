@@ -20,6 +20,13 @@ from .backend import (
     write_runtime_status,
 )
 from .bundle import RuntimeManagerBundle
+from .command import (
+    RuntimeCommandConflictError,
+    RuntimeCommandRecord,
+    RuntimeCommandReducer,
+    RuntimeCommandReservation,
+    RuntimeCommandStatus,
+)
 from .directory import RuntimeDirectoryManager
 from .durable_store import RuntimeDurableStore, RuntimeIdentityMismatchError
 from .event_store import RuntimeEventCursor, RuntimeEventJsonlStore, RuntimeEventStore
@@ -57,6 +64,8 @@ from .projection import (
 )
 from .recovery import (
     RuntimeCheckpointRef,
+    RuntimeContinuationAssessment,
+    RuntimeContinuationSelector,
     RuntimeProcessAttempt,
     RuntimeProcessGraph,
     RuntimeRecoveryAction,
@@ -105,6 +114,13 @@ __all__ = [
     "RuntimeCheckpointMode",
     "RuntimeCheckpointPolicy",
     "RuntimeCheckpointRef",
+    "RuntimeCommandConflictError",
+    "RuntimeCommandRecord",
+    "RuntimeCommandReducer",
+    "RuntimeCommandReservation",
+    "RuntimeCommandStatus",
+    "RuntimeContinuationAssessment",
+    "RuntimeContinuationSelector",
     "RuntimeErrorInfo",
     "RuntimeEvent",
     "RuntimeEventCursor",

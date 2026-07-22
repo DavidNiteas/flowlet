@@ -492,7 +492,8 @@ for both business txn backends to execute on Flowlet rather than beside it.
 ### Remaining Work
 
 - Durable idempotent commands and live-lease-aware directory reset.
-- DAG continuation executor and cleanup enforcement.
+- Execution-wave orchestration around the implemented DAG continuation
+  selector and cleanup enforcement.
 - MetaMSTools and MassLib4Search txn migration.
 - Fault injection, compatibility, and real-workspace acceptance.
 

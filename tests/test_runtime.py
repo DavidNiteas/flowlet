@@ -15,6 +15,10 @@ from flowlet.runtime import (
     RuntimeCheckpointMode,
     RuntimeCheckpointPolicy,
     RuntimeCheckpointRef,
+    RuntimeCommandConflictError,
+    RuntimeCommandStatus,
+    RuntimeContinuationAssessment,
+    RuntimeContinuationSelector,
     RuntimeDirectoryManager,
     RuntimeDurableStore,
     RuntimeErrorInfo,
@@ -326,6 +330,68 @@ def test_backend_session_takeover_reconciles_interrupted_work_once(tmp_path):
     assert store.last_event_sequence() == after
 
 
+def test_durable_runtime_commands_are_idempotent_and_conflict_checked(tmp_path):
+    database_path = tmp_path / "runtime.db"
+    store = RuntimeDurableStore.create(
+        database_path,
+        RuntimeIdentity(runtime_id="runtime-1", created_at=1.0),
+    )
+
+    def reserve(_: int) -> bool:
+        writer = RuntimeDurableStore(database_path)
+        return writer.reserve_command(
+            command_id="continue-command-1",
+            command_type="runtime.continue",
+            target_id="process-1",
+            timestamp=2.0,
+            payload={"reason": "resume interrupted work"},
+        ).created
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        created = list(pool.map(reserve, range(4)))
+    assert created.count(True) == 1
+    assert created.count(False) == 3
+    assert len(store.commands()) == 1
+    assert store.last_event_sequence() == 0
+
+    with pytest.raises(RuntimeCommandConflictError, match="different request"):
+        store.reserve_command(
+            command_id="continue-command-1",
+            command_type="runtime.rerun",
+            timestamp=3.0,
+        )
+
+    completed = store.finish_command(
+        "continue-command-1",
+        status=RuntimeCommandStatus.SUCCEEDED,
+        timestamp=4.0,
+        result={"execution_id": "execution-2"},
+    )
+    repeated = store.finish_command(
+        "continue-command-1",
+        status=RuntimeCommandStatus.SUCCEEDED,
+        timestamp=5.0,
+        result={"execution_id": "execution-2"},
+    )
+    assert repeated == completed
+    assert store.last_event_sequence() == 1
+    assert store.rebuild_commands() == [completed]
+
+    with sqlite3.connect(store.database_path) as connection:
+        connection.execute("DELETE FROM runtime_commands")
+    assert store.commands() == []
+    assert store.rebuild_commands(replace=True) == [completed]
+    assert RuntimeDurableStore(database_path).commands() == [completed]
+
+    with pytest.raises(RuntimeCommandConflictError, match="different terminal result"):
+        store.finish_command(
+            "continue-command-1",
+            status=RuntimeCommandStatus.FAILED,
+            timestamp=6.0,
+            error=RuntimeErrorInfo(type="LateFailure", message="conflicting replay"),
+        )
+
+
 def test_durable_runtime_store_materializes_attempts_and_projection_cursor(tmp_path):
     store = RuntimeDurableStore.create(
         tmp_path / "runtime.db",
@@ -509,6 +575,27 @@ def test_runtime_directory_manager_rejects_rerun_identity_reuse(tmp_path):
 
     with pytest.raises(ValueError, match="new runtime_id"):
         manager.rerun(identity, expected_runtime_id="runtime-1")
+
+
+def test_runtime_directory_manager_rejects_rerun_while_lease_is_live(tmp_path):
+    manager = RuntimeDirectoryManager(tmp_path / "runtime")
+    current = RuntimeIdentity(runtime_id="runtime-1", generation=1, created_at=1.0)
+    store = manager.create(current)
+    store.acquire_backend_session(
+        session_id="session-1", owner_id="backend-1", now=2.0, ttl=10.0
+    )
+    replacement = RuntimeIdentity(
+        runtime_id="runtime-2",
+        generation=2,
+        rerun_of_runtime_id="runtime-1",
+        created_at=3.0,
+    )
+
+    with pytest.raises(RuntimeLeaseConflictError, match="Cannot rerun"):
+        manager.rerun(replacement, expected_runtime_id="runtime-1", now=3.0)
+
+    rerun = manager.rerun(replacement, expected_runtime_id="runtime-1", now=13.0)
+    assert rerun.identity() == replacement
 
 
 def test_runtime_store_writes_standard_files_and_lists_artifacts(tmp_path):
@@ -1046,6 +1133,127 @@ def test_runtime_recovery_planner_requires_complete_package_decisions():
             plan_id="plan-1",
             target_runtime_id="runtime-new",
             created_at=1.0,
+        )
+
+
+def test_runtime_continuation_selector_builds_minimum_affected_dag():
+    specs = [
+        RuntimeProcessSpec(process_id="prepare", process_type="example.prepare"),
+        RuntimeProcessSpec(
+            process_id="score",
+            process_type="example.score",
+            depends_on=["prepare"],
+            idempotency=RuntimeIdempotency.IDEMPOTENT,
+            capabilities=RuntimeProcessCapabilities(can_retry=True),
+            retry_policy=RuntimeRetryPolicy(max_attempts=3),
+        ),
+        RuntimeProcessSpec(
+            process_id="report",
+            process_type="example.report",
+            depends_on=["score"],
+        ),
+        RuntimeProcessSpec(process_id="unrelated", process_type="example.unrelated"),
+    ]
+    succeeded = RuntimeProcessState(
+        process_id="placeholder",
+        status=RuntimeEventStatus.SUCCEEDED,
+        status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+    )
+    projection = RuntimeProjection(
+        runtime_id="runtime-1",
+        processes={
+            "prepare": succeeded.model_copy(update={"process_id": "prepare"}),
+            "score": RuntimeProcessState(
+                process_id="score",
+                status=RuntimeEventStatus.INTERRUPTED,
+                status_class=RuntimeStatusClass.TERMINAL_FAILURE,
+            ),
+            "report": succeeded.model_copy(update={"process_id": "report"}),
+            "unrelated": succeeded.model_copy(update={"process_id": "unrelated"}),
+        },
+        process_attempt_ids={"score": ["score:attempt:1"]},
+    )
+    plan = RuntimeContinuationSelector().create_plan(
+        specs=specs,
+        source_projection=projection,
+        assessments=[
+            RuntimeContinuationAssessment(process_id="prepare", completed_output_valid=True),
+            RuntimeContinuationAssessment(
+                process_id="score",
+                completed_output_valid=False,
+                reason="interrupted backend attempt",
+            ),
+            RuntimeContinuationAssessment(process_id="report", completed_output_valid=True),
+            RuntimeContinuationAssessment(process_id="unrelated", completed_output_valid=True),
+        ],
+        plan_id="continue-1",
+        target_runtime_id="runtime-1",
+        created_at=10.0,
+    )
+
+    assert [step.process_id for step in plan.steps] == [
+        "prepare",
+        "score",
+        "report",
+        "unrelated",
+    ]
+    assert [step.action for step in plan.steps] == [
+        RuntimeRecoveryAction.SKIP,
+        RuntimeRecoveryAction.RETRY,
+        RuntimeRecoveryAction.RESTART,
+        RuntimeRecoveryAction.SKIP,
+    ]
+    assert plan.steps[1].source_attempt_id == "score:attempt:1"
+    assert plan.steps[1].invalidates == ["report"]
+
+
+def test_runtime_continuation_selector_enforces_cleanup_gate():
+    spec = RuntimeProcessSpec(
+        process_id="publish",
+        process_type="example.publish",
+        idempotency=RuntimeIdempotency.REQUIRES_CLEANUP,
+        capabilities=RuntimeProcessCapabilities(can_retry=True, can_cleanup=True),
+        retry_policy=RuntimeRetryPolicy(max_attempts=3),
+    )
+    projection = RuntimeProjection(
+        runtime_id="runtime-1",
+        processes={
+            "publish": RuntimeProcessState(
+                process_id="publish",
+                status=RuntimeEventStatus.FAILED,
+                status_class=RuntimeStatusClass.TERMINAL_FAILURE,
+            )
+        },
+        process_attempt_ids={"publish": ["publish:attempt:1"]},
+    )
+
+    def select(cleanup_completed: bool) -> RuntimeRecoveryAction:
+        plan = RuntimeContinuationSelector().create_plan(
+            specs=[spec],
+            source_projection=projection,
+            assessments=[
+                RuntimeContinuationAssessment(
+                    process_id="publish",
+                    cleanup_completed=cleanup_completed,
+                )
+            ],
+            plan_id=f"continue-{cleanup_completed}",
+            target_runtime_id="runtime-1",
+            created_at=2.0,
+        )
+        return plan.steps[0].action
+
+    assert select(cleanup_completed=False) == RuntimeRecoveryAction.BLOCK
+    assert select(cleanup_completed=True) == RuntimeRecoveryAction.RETRY
+
+    with pytest.raises(RuntimeRecoveryPlanError, match="must preserve runtime_id"):
+        RuntimeContinuationSelector().create_plan(
+            specs=[spec],
+            source_projection=projection,
+            assessments=[RuntimeContinuationAssessment(process_id="publish")],
+            plan_id="invalid-cross-runtime-continue",
+            target_runtime_id="runtime-2",
+            created_at=3.0,
         )
 
 

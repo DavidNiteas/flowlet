@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 import threading
 import time
 from pathlib import Path
 from typing import Any
 
+from .command import (
+    RuntimeCommandConflictError,
+    RuntimeCommandRecord,
+    RuntimeCommandReducer,
+    RuntimeCommandReservation,
+    RuntimeCommandStatus,
+)
 from .event_store import RuntimeEventCursor
 from .identity import (
     RuntimeExecutionKind,
@@ -294,6 +303,164 @@ class RuntimeDurableStore:
         with self._changed:
             self._changed.notify_all()
         return stored
+
+    def reserve_command(
+        self,
+        *,
+        command_id: str,
+        command_type: str,
+        timestamp: float,
+        target_id: str | None = None,
+        execution_id: str | None = None,
+        backend_session_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeCommandReservation:
+        """Accept one command id once and return an existing identical receipt."""
+        identity = self._require_identity()
+        request_payload = payload or {}
+        fingerprint = _command_fingerprint(
+            command_type=command_type,
+            target_id=target_id,
+            execution_id=execution_id,
+            payload=request_payload,
+        )
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = self._load_command_tx(connection, command_id)
+            if existing is not None:
+                connection.rollback()
+                if existing.request_fingerprint != fingerprint:
+                    raise RuntimeCommandConflictError(
+                        f"command_id {command_id!r} was already used for a different request"
+                    )
+                return RuntimeCommandReservation(record=existing, created=False)
+            event = self._append_event_tx(
+                connection,
+                RuntimeEvent(
+                    event_id=-1,
+                    runtime_id=identity.runtime_id,
+                    execution_id=execution_id,
+                    event_type=RuntimeEventType.COMMAND_ACCEPTED,
+                    timestamp=timestamp,
+                    subject_type="command",
+                    subject_id=command_id,
+                    status=RuntimeCommandStatus.ACCEPTED,
+                    status_class=RuntimeStatusClass.NOT_STARTED,
+                    payload={
+                        "command_type": command_type,
+                        "target_id": target_id,
+                        "backend_session_id": backend_session_id,
+                        "request_fingerprint": fingerprint,
+                        "request": request_payload,
+                    },
+                    metadata=metadata or {},
+                ),
+            )
+            sequence = int(event.event_id)
+            record = RuntimeCommandRecord(
+                command_id=command_id,
+                runtime_id=identity.runtime_id,
+                command_type=command_type,
+                request_fingerprint=fingerprint,
+                target_id=target_id,
+                execution_id=execution_id,
+                backend_session_id=backend_session_id,
+                accepted_at=timestamp,
+                first_event_sequence=sequence,
+                last_event_sequence=sequence,
+                payload=request_payload,
+                metadata=metadata or {},
+            )
+            self._write_command_tx(connection, record)
+            connection.commit()
+        self._notify_changed()
+        return RuntimeCommandReservation(record=record, created=True)
+
+    def finish_command(
+        self,
+        command_id: str,
+        *,
+        status: RuntimeCommandStatus,
+        timestamp: float,
+        result: dict[str, Any] | None = None,
+        error: RuntimeErrorInfo | None = None,
+    ) -> RuntimeCommandRecord:
+        """Append one terminal result, returning an identical prior result idempotently."""
+        if status == RuntimeCommandStatus.ACCEPTED:
+            raise ValueError("finish_command requires a terminal command status")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            record = self._load_command_tx(connection, command_id)
+            if record is None:
+                connection.rollback()
+                raise KeyError(f"Unknown command_id: {command_id!r}")
+            if record.status != RuntimeCommandStatus.ACCEPTED:
+                connection.rollback()
+                if record.status == status and record.result == result and record.error == error:
+                    return record
+                raise RuntimeCommandConflictError(
+                    f"command_id {command_id!r} already has a different terminal result"
+                )
+            event_type = (
+                RuntimeEventType.COMMAND_SUCCEEDED
+                if status == RuntimeCommandStatus.SUCCEEDED
+                else RuntimeEventType.COMMAND_FAILED
+            )
+            event = self._append_event_tx(
+                connection,
+                RuntimeEvent(
+                    event_id=-1,
+                    runtime_id=record.runtime_id,
+                    execution_id=record.execution_id,
+                    event_type=event_type,
+                    timestamp=timestamp,
+                    subject_type="command",
+                    subject_id=record.command_id,
+                    status=status,
+                    status_class=(
+                        RuntimeStatusClass.TERMINAL_SUCCESS
+                        if status == RuntimeCommandStatus.SUCCEEDED
+                        else RuntimeStatusClass.TERMINAL_FAILURE
+                    ),
+                    error=error,
+                    payload={"result": result},
+                ),
+            )
+            record = record.model_copy(
+                update={
+                    "status": status,
+                    "finished_at": timestamp,
+                    "last_event_sequence": int(event.event_id),
+                    "result": result,
+                    "error": error,
+                }
+            )
+            self._write_command_tx(connection, record)
+            connection.commit()
+        self._notify_changed()
+        return record
+
+    def commands(self) -> list[RuntimeCommandRecord]:
+        """Return durable command receipts in acceptance order."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT command_json FROM runtime_commands ORDER BY first_event_sequence"
+            ).fetchall()
+        return [RuntimeCommandRecord.model_validate_json(row[0]) for row in rows]
+
+    def rebuild_commands(self, *, replace: bool = False) -> list[RuntimeCommandRecord]:
+        """Rebuild command receipts from events and optionally replace their index."""
+        rebuilt = RuntimeCommandReducer().reduce(self._require_identity(), self.list())
+        if not replace:
+            return rebuilt
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM runtime_commands")
+            for record in rebuilt:
+                self._write_command_tx(connection, record)
+            connection.commit()
+        return rebuilt
 
     def list(self, *, since: RuntimeEventCursor | None = None) -> list[RuntimeEvent]:
         """List canonical events after an optional sequence cursor."""
@@ -813,6 +980,33 @@ class RuntimeDurableStore:
         with self._changed:
             self._changed.notify_all()
 
+    @staticmethod
+    def _load_command_tx(
+        connection: sqlite3.Connection, command_id: str
+    ) -> RuntimeCommandRecord | None:
+        row = connection.execute(
+            "SELECT command_json FROM runtime_commands WHERE command_id = ?", (command_id,)
+        ).fetchone()
+        return RuntimeCommandRecord.model_validate_json(row[0]) if row is not None else None
+
+    @staticmethod
+    def _write_command_tx(connection: sqlite3.Connection, record: RuntimeCommandRecord) -> None:
+        connection.execute(
+            """
+            INSERT INTO runtime_commands(command_id, status, first_event_sequence, command_json)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(command_id) DO UPDATE SET
+                status = excluded.status,
+                command_json = excluded.command_json
+            """,
+            (
+                record.command_id,
+                record.status,
+                record.first_event_sequence,
+                record.model_dump_json(),
+            ),
+        )
+
     def _initialize_schema(self) -> None:
         with self._connect() as connection:
             connection.executescript(
@@ -868,6 +1062,12 @@ class RuntimeDurableStore:
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS runtime_backend_sessions_active_idx
                     ON runtime_backend_sessions(status) WHERE status = 'active';
+                CREATE TABLE IF NOT EXISTS runtime_commands (
+                    command_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    first_event_sequence INTEGER NOT NULL,
+                    command_json TEXT NOT NULL
+                );
                 """
             )
 
@@ -886,6 +1086,27 @@ def _numeric_cursor(cursor: RuntimeEventCursor | None) -> int | None:
         return int(cursor)
     except ValueError:
         return None
+
+
+def _command_fingerprint(
+    *,
+    command_type: str,
+    target_id: str | None,
+    execution_id: str | None,
+    payload: dict[str, Any],
+) -> str:
+    canonical = json.dumps(
+        {
+            "command_type": command_type,
+            "target_id": target_id,
+            "execution_id": execution_id,
+            "payload": payload,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _execution_event(

@@ -190,6 +190,21 @@ class RuntimeRecoveryDecision(BaseModel):
         return self
 
 
+class RuntimeContinuationAssessment(BaseModel):
+    """Package evidence consumed by framework DAG continuation selection."""
+
+    process_id: str
+    completed_output_valid: bool = False
+    checkpoint_id: str | None = None
+    preferred_action: RuntimeRecoveryAction | None = None
+    force_reexecute: bool = False
+    cleanup_completed: bool = False
+    preserve_on_upstream_reexecution: bool = False
+    invalidates: list[str] = Field(default_factory=list)
+    reason: str = "runtime state assessment"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RuntimeRecoveryStep(BaseModel):
     """Ordered, reviewable action in a persisted local recovery plan."""
 
@@ -347,6 +362,11 @@ class RuntimeRecoveryPlanner:
                 return RuntimeRecoveryAction.BLOCK, "process does not declare retry capability"
             if spec.idempotency == RuntimeIdempotency.NON_IDEMPOTENT:
                 return RuntimeRecoveryAction.BLOCK, "non-idempotent process cannot be retried automatically"
+            if (
+                spec.idempotency == RuntimeIdempotency.REQUIRES_CLEANUP
+                and not decision.metadata.get("cleanup_completed", False)
+            ):
+                return RuntimeRecoveryAction.BLOCK, "process requires confirmed cleanup before retry"
             attempts = projection.process_attempt_ids.get(process_id, [])
             max_attempts = spec.retry_policy.max_attempts if spec.retry_policy is not None else 1
             if len(attempts) >= max_attempts:
@@ -356,4 +376,136 @@ class RuntimeRecoveryPlanner:
                 return RuntimeRecoveryAction.BLOCK, "process does not declare start capability"
             if spec.idempotency == RuntimeIdempotency.NON_IDEMPOTENT:
                 return RuntimeRecoveryAction.BLOCK, "non-idempotent process cannot restart automatically"
+            if (
+                spec.idempotency == RuntimeIdempotency.REQUIRES_CLEANUP
+                and not decision.metadata.get("cleanup_completed", False)
+            ):
+                return RuntimeRecoveryAction.BLOCK, "process requires confirmed cleanup before restart"
         return decision.action, decision.reason
+
+
+class RuntimeContinuationSelector:
+    """Select the minimum executable DAG subgraph from state and package evidence."""
+
+    def create_plan(
+        self,
+        *,
+        specs: list[RuntimeProcessSpec],
+        source_projection: RuntimeProjection,
+        assessments: list[RuntimeContinuationAssessment],
+        plan_id: str,
+        target_runtime_id: str,
+        created_at: float,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeRecoveryPlan:
+        """Build a full plan whose skip steps represent nodes outside local work."""
+        if target_runtime_id != source_projection.runtime_id:
+            raise RuntimeRecoveryPlanError(
+                "Continuation must preserve runtime_id; use rerun for a new lineage"
+            )
+        graph = build_runtime_process_graph(specs)
+        specs_by_id = {spec.resolved_process_id(): spec for spec in specs}
+        assessments_by_id = {item.process_id: item for item in assessments}
+        if len(assessments_by_id) != len(assessments):
+            raise RuntimeRecoveryPlanError("Continuation assessments must have unique process_ids")
+        missing = set(graph.process_ids).difference(assessments_by_id)
+        unknown = set(assessments_by_id).difference(graph.process_ids)
+        if missing or unknown:
+            raise RuntimeRecoveryPlanError(
+                "Continuation assessment coverage mismatch: "
+                f"missing={sorted(missing)!r}, unknown={sorted(unknown)!r}"
+            )
+
+        affected: set[str] = set()
+        for process_id in graph.topological_order:
+            assessment = assessments_by_id[process_id]
+            state = source_projection.processes.get(process_id)
+            if (
+                assessment.force_reexecute
+                or state is None
+                or state.status_class != RuntimeStatusClass.TERMINAL_SUCCESS
+                or not assessment.completed_output_valid
+            ):
+                affected.add(process_id)
+            unknown_invalidations = set(assessment.invalidates).difference(graph.process_ids)
+            if unknown_invalidations:
+                raise RuntimeRecoveryPlanError(
+                    f"Assessment for {process_id!r} invalidates unknown processes: "
+                    f"{sorted(unknown_invalidations)!r}"
+                )
+            affected.update(assessment.invalidates)
+
+        for process_id in graph.topological_order:
+            assessment = assessments_by_id[process_id]
+            if assessment.preserve_on_upstream_reexecution:
+                continue
+            if any(dependency in affected for dependency in graph.dependencies[process_id]):
+                affected.add(process_id)
+
+        decisions = [
+            self._decision(
+                process_id=process_id,
+                spec=specs_by_id[process_id],
+                projection=source_projection,
+                assessment=assessments_by_id[process_id],
+                affected=process_id in affected,
+            )
+            for process_id in graph.topological_order
+        ]
+        return RuntimeRecoveryPlanner().create_plan(
+            specs=specs,
+            source_projection=source_projection,
+            decisions=decisions,
+            plan_id=plan_id,
+            target_runtime_id=target_runtime_id,
+            created_at=created_at,
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _decision(
+        *,
+        process_id: str,
+        spec: RuntimeProcessSpec,
+        projection: RuntimeProjection,
+        assessment: RuntimeContinuationAssessment,
+        affected: bool,
+    ) -> RuntimeRecoveryDecision:
+        metadata = {**assessment.metadata, "cleanup_completed": assessment.cleanup_completed}
+        if not affected:
+            return RuntimeRecoveryDecision(
+                process_id=process_id,
+                action=RuntimeRecoveryAction.SKIP,
+                reason="completed process and outputs remain valid",
+                preserve_on_upstream_reexecution=assessment.preserve_on_upstream_reexecution,
+                metadata=metadata,
+            )
+
+        attempt_ids = projection.process_attempt_ids.get(process_id, [])
+        source_attempt_id = attempt_ids[-1] if attempt_ids else None
+        checkpoint = (
+            projection.checkpoints.get(assessment.checkpoint_id)
+            if assessment.checkpoint_id is not None
+            else None
+        )
+        action = assessment.preferred_action
+        if action is None and checkpoint is not None and spec.capabilities.supports(
+            RuntimeProcessOperation.RESUME
+        ):
+            action = RuntimeRecoveryAction.RESUME
+        if action is None and source_attempt_id is not None and spec.capabilities.supports(
+            RuntimeProcessOperation.RETRY
+        ):
+            action = RuntimeRecoveryAction.RETRY
+        if action is None:
+            action = RuntimeRecoveryAction.RESTART
+        return RuntimeRecoveryDecision(
+            process_id=process_id,
+            action=action,
+            reason=assessment.reason,
+            source_attempt_id=source_attempt_id,
+            checkpoint=checkpoint,
+            invalidates=assessment.invalidates,
+            preserve_on_upstream_reexecution=assessment.preserve_on_upstream_reexecution,
+            metadata=metadata,
+        )

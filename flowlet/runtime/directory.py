@@ -6,6 +6,7 @@ import fcntl
 import json
 import os
 import shutil
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,6 +16,7 @@ from uuid import uuid4
 from .durable_store import RuntimeDurableStore
 from .identity import RuntimeIdentity
 from .info import RuntimeFileLayout
+from .session import RuntimeLeaseConflictError
 
 RuntimeCleanup = Callable[[Path, RuntimeIdentity], None]
 
@@ -58,14 +60,23 @@ class RuntimeDirectoryManager:
         *,
         expected_runtime_id: str,
         cleanup: RuntimeCleanup | None = None,
+        now: float | None = None,
     ) -> RuntimeDurableStore:
         """Abandon an old lineage and initialize a clean generation in place."""
         with self._exclusive_lock():
             self._recover_pending_reset_locked()
-            current = RuntimeDurableStore(
+            current_store = RuntimeDurableStore(
                 self.database_path,
                 expected_runtime_id=expected_runtime_id,
-            ).identity()
+            )
+            live_session = current_store.active_backend_session(
+                now=time.time() if now is None else now
+            )
+            if live_session is not None:
+                raise RuntimeLeaseConflictError(
+                    f"Cannot rerun while backend session {live_session.session_id!r} owns the runtime"
+                )
+            current = current_store.identity()
             if current is None:  # pragma: no cover - store constructor guards this
                 raise ValueError("Current runtime identity is unavailable")
             _validate_rerun_identity(current, new_identity)

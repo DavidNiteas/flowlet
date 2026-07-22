@@ -958,3 +958,21 @@ Keep these in business packages:
   MetaMSTools backend/recovery tests pass at 26 and MassLib4Search at 21.
 - Next work is durable command idempotency, DAG continuation selection and its
   cleanup gate, then native package backend migration.
+
+### Phase 11 Continued: Local DAG Work And Durable Commands
+
+- `RuntimeContinuationSelector` now computes the minimum affected DAG from
+  projection state and explicit package assessments. Valid completed ancestors
+  and unrelated nodes are skipped; affected downstream nodes are reselected.
+- Continuation plans must preserve `runtime_id`. Rerun remains a directory
+  reset into a new lineage.
+- Retry/restart for `REQUIRES_CLEANUP` processes is blocked until package code
+  confirms cleanup; Flowlet never performs business artifact cleanup itself.
+- `RuntimeCommandRecord` provides durable request idempotency. Identical command
+  replays return one receipt, conflicting reuse is rejected, terminal replay is
+  idempotent, and command materialization is event-rebuildable.
+- `RuntimeDirectoryManager.rerun()` now rejects a live backend lease before
+  package cleanup or filesystem reset.
+- Flowlet Ruff and all 76 runtime tests pass.
+- Next work is to make execution waves own plan transitions, then migrate
+  MetaMSTools first and MassLib4Search second.
