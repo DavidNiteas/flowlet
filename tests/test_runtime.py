@@ -249,6 +249,38 @@ def test_runtime_manager_event_bridge_mirrors_manager_changes(tmp_path):
         runtime.close()
 
 
+def test_runtime_backend_executor_syncs_non_owned_manager_bridge(tmp_path):
+    class ManagerProcess(RuntimeProcessBase):
+        def start(self, context: RuntimeProcessContext) -> None:
+            del context
+            runtime.progress.register_task("task1", "Task", total=1)
+            runtime.progress.update_progress("task1", current=1, status="completed")
+            runtime.logs.info("process completed", task_id="task1")
+
+    runtime = RuntimeManagerBundle.create()
+    store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
+    bridge = RuntimeManagerEventBridge(runtime, store, runtime_id="runtime1", process_id="manager-process")
+    executor = RuntimeBackendExecutor(
+        runtime_id="runtime1",
+        runtime_dir=tmp_path / "runtime",
+        event_store=store,
+        manager_bridge=bridge,
+    )
+    executor.register(ManagerProcess(RuntimeProcessSpec(process_id="manager-process", process_type="example.manager")))
+    try:
+        executor.run_process("manager-process")
+
+        assert [event.event_type for event in store.list()] == [
+            "process.status.changed",
+            "process.status.changed",
+            "process.progressed",
+            "log.emitted",
+        ]
+        assert executor.projection().processes["manager-process"].status == RuntimeEventStatus.SUCCEEDED
+    finally:
+        runtime.close()
+
+
 def test_runtime_process_runner_emits_lifecycle_events(tmp_path):
     class ExampleProcess(RuntimeProcessBase):
         def start(self, context: RuntimeProcessContext) -> dict[str, Any]:
@@ -529,6 +561,37 @@ def test_runtime_backend_executor_dispatches_optional_hooks(tmp_path):
         RuntimeEventStatus.SUCCEEDED,
         RuntimeEventStatus.SUCCEEDED,
     ]
+
+
+def test_runtime_backend_executor_writes_projection_after_hook_failure(tmp_path):
+    class FailingCancelProcess(RuntimeProcessBase):
+        def cancel(self, context: RuntimeProcessContext) -> None:
+            context.emit_log("before failure")
+            raise ValueError("cancel failed")
+
+    runtime_dir = tmp_path / "runtime"
+    executor = RuntimeBackendExecutor(runtime_id="runtime1", runtime_dir=runtime_dir)
+    executor.register(
+        FailingCancelProcess(
+            RuntimeProcessSpec(
+                process_id="failing-cancel",
+                process_type="example.failing-cancel",
+                capabilities=RuntimeProcessCapabilities(can_cancel=True),
+            )
+        )
+    )
+
+    try:
+        executor.cancel_process("failing-cancel")
+    except ValueError as exc:
+        assert str(exc) == "cancel failed"
+    else:  # pragma: no cover
+        raise AssertionError("failing cancel should raise")
+
+    projection = RuntimeStore(runtime_dir).load_projection()
+
+    assert projection is not None
+    assert [event.event_type for event in executor.event_store.list()] == ["log.emitted"]
 
 
 def test_runtime_process_base_reports_unsupported_operation(tmp_path):

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .event_store import RuntimeEventJsonlStore, RuntimeEventStore
+from .manager_bridge import RuntimeManagerEventBridge
 from .process import (
     RuntimeProcess,
     RuntimeProcessContext,
@@ -27,6 +28,7 @@ class RuntimeBackendExecutor:
         runtime_id: str,
         runtime_dir: str | Path | None = None,
         event_store: RuntimeEventStore | None = None,
+        manager_bridge: RuntimeManagerEventBridge | None = None,
         projection_policy: RuntimeProjectionPolicy | None = None,
     ) -> None:
         self.runtime_id = runtime_id
@@ -36,6 +38,9 @@ class RuntimeBackendExecutor:
             if self.runtime_dir is not None
             else None
         )
+        if manager_bridge is not None and manager_bridge.event_store is not self.event_store:
+            raise ValueError("manager_bridge must write to the executor event_store")
+        self.manager_bridge = manager_bridge
         self.projection_policy = projection_policy or RuntimeProjectionPolicy()
         self._processes: dict[str, RuntimeProcess] = {}
 
@@ -49,9 +54,11 @@ class RuntimeBackendExecutor:
         """Run one registered process and persist the current projection."""
         process = self._get_process(process_id)
         context = self._context_for(process)
+        self.sync_manager_events()
         try:
             return RuntimeProcessRunner(context).run(process)
         finally:
+            self.sync_manager_events()
             self.write_projection()
 
     def run_all(self) -> dict[str, Any]:
@@ -111,6 +118,12 @@ class RuntimeBackendExecutor:
         """Return the current framework projection."""
         return RuntimeFrameworkReducer(policy=self.projection_policy).reduce(self.event_store.list())
 
+    def sync_manager_events(self) -> list[Any]:
+        """Synchronize the optional manager bridge without owning its lifecycle."""
+        if self.manager_bridge is None:
+            return []
+        return self.manager_bridge.sync()
+
     def write_projection(self) -> RuntimeProjection:
         """Persist and return the current framework projection."""
         projection = self.projection()
@@ -147,6 +160,7 @@ class RuntimeBackendExecutor:
     ) -> Any:
         process = self._get_process(process_id)
         context = self._context_for(process)
+        self.sync_manager_events()
         if not process.spec.capabilities.supports(operation):
             error = RuntimeUnsupportedOperationError(process_id, operation)
             context.emit_error(error.to_error_info(), event_type=f"process.{operation.value}.unsupported")
@@ -158,15 +172,17 @@ class RuntimeBackendExecutor:
             result = getattr(process, operation.value)(context)
         except RuntimeUnsupportedOperationError as exc:
             context.emit_error(exc.to_error_info(), event_type=f"process.{exc.operation.value}.unsupported")
-            self.write_projection()
             raise
-        context.emit_status(
-            terminal_status,
-            message=terminal_message,
-            payload={"result": result if isinstance(result, dict) else {"value": result}},
-        )
-        self.write_projection()
-        return result
+        else:
+            context.emit_status(
+                terminal_status,
+                message=terminal_message,
+                payload={"result": result if isinstance(result, dict) else {"value": result}},
+            )
+            return result
+        finally:
+            self.sync_manager_events()
+            self.write_projection()
 
 
 def _next_event_id(events: list[Any]) -> int:

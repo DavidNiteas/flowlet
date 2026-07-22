@@ -244,11 +244,11 @@ Provide a framework runtime backend capable of executing registered processes an
 - A `paused` status remains in the framework `active` status class.
 - It writes `runtime/projection.json` through `RuntimeStore`.
 - `RuntimeManagerEventBridge` incrementally mirrors a `RuntimeManagerBundle` into a `RuntimeEventStore` without controlling it.
+- The executor optionally receives a bridge that writes to its own event store, synchronizes it at operation boundaries, and never closes the bridge or bundle.
 
 ### Remaining Phase 5 Work
 
 - Add scheduler/resource integration only after process resource semantics are stable.
-- Decide how an executor should construct or receive a `RuntimeManagerEventBridge` without taking ownership of manager lifecycle.
 - Keep queueing/threading/business lifecycle policy in business packages or explicit adapters.
 
 ## Phase 6: MetaMSTools Compatibility Adapter
