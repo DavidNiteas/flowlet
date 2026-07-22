@@ -243,6 +243,9 @@ Provide a framework runtime backend capable of executing registered processes an
 
 - `RuntimeBackendExecutor` is introduced as a minimal framework executor.
 - It registers `RuntimeProcess` implementations by resolved process id.
+- Registration persists their serializable declarations to
+  `runtime/processes.json`; this manifest intentionally excludes implementation
+  objects and does not imply process restartability.
 - It runs processes through `RuntimeProcessRunner`.
 - It allocates monotonically increasing event ids across processes sharing one event store.
 - It dispatches cancel hooks and emits unsupported-operation events when cancel is not supported.

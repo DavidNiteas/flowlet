@@ -99,7 +99,9 @@ FSM events should enter the same runtime event stream when the process context i
 
 ## Event Stream as Canonical Source
 
-The long-term source of truth should be `events.jsonl`.
+The long-term framework source of truth should be the standard
+`runtime/events.runtime.jsonl` stream. During migration, legacy `events.jsonl`
+remains a compatibility stream.
 
 Existing files become projections or compatibility outputs:
 
@@ -107,6 +109,7 @@ Existing files become projections or compatibility outputs:
 runtime_info.json        runtime/execution metadata
 runtime/events.runtime.jsonl
                          standard RuntimeEvent sidecar stream during migration
+runtime/processes.json   serializable RuntimeProcessSpec manifest
 events.jsonl             legacy compatibility event stream
 status.json              compatibility process/execution state projection
 snapshot.json            full runtime projection
@@ -136,6 +139,7 @@ The current layout remains valid:
   runtime_info.json
   events.jsonl
   runtime/events.runtime.jsonl
+  runtime/processes.json
   job_spec.json
   status.json
   snapshot.json
@@ -147,7 +151,10 @@ The current layout remains valid:
     telemetry.jsonl
 ```
 
-The future layout may add process-oriented shards without breaking current readers:
+`runtime/processes.json` is a stable manifest of process declarations. It does
+not serialize a business process implementation or promise restartability by
+itself. The future layout may add process-oriented shards without breaking the
+manifest or current readers:
 
 ```text
 <runtime_dir>/

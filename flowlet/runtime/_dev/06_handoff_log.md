@@ -251,6 +251,19 @@ Validation:
 
 - `flowlet/tests/test_runtime.py`: 37 passed.
 
+### Continued Progress: Process Specification Manifest
+
+- `RuntimeFileLayout.processes` defines `runtime/processes.json`.
+- `RuntimeBackendExecutor.register()` writes the current ordered
+  `RuntimeProcessSpec` declarations, and `RuntimeStore.load_process_specs()`
+  restores them for observers.
+- The manifest is deliberately declarative. It does not serialize business
+  implementations or claim that a process can be resumed after restart.
+
+Validation:
+
+- `flowlet/tests/test_runtime.py`: 37 passed.
+
 Result:
 
 ```text

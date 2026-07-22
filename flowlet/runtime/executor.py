@@ -49,6 +49,7 @@ class RuntimeBackendExecutor:
         """Register a process implementation."""
         process_id = process.spec.resolved_process_id()
         self._processes[process_id] = process
+        self._write_process_specs()
         return process
 
     def run_process(self, process_id: str) -> Any:
@@ -146,6 +147,10 @@ class RuntimeBackendExecutor:
         if self.runtime_dir is not None:
             RuntimeStore(self.runtime_dir).write_projection(projection.model_dump(mode="json"))
         return projection
+
+    def _write_process_specs(self) -> None:
+        if self.runtime_dir is not None:
+            RuntimeStore(self.runtime_dir).write_process_specs([process.spec for process in self._processes.values()])
 
     def _context_for(self, process: RuntimeProcess) -> RuntimeProcessContext:
         process_id = process.spec.resolved_process_id()

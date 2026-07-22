@@ -9,6 +9,7 @@ from typing import Any
 from .artifacts import list_runtime_artifacts
 from .event_store import RuntimeEventJsonlStore
 from .info import RuntimeFileLayout
+from .process import RuntimeProcessSpec
 from .projection import RuntimeProjection
 from .schema import RuntimeEvent
 
@@ -38,6 +39,20 @@ class RuntimeStore:
 
     def write_job_spec(self, payload: Any) -> None:
         write_json(self.path(self.layout.job_spec), payload)
+
+    def write_process_specs(self, specs: list[RuntimeProcessSpec]) -> None:
+        """Persist serializable process declarations, not process implementations."""
+        write_json(self.path(self.layout.processes), [spec.model_dump(mode="json") for spec in specs])
+
+    def load_process_specs(self) -> list[RuntimeProcessSpec]:
+        """Load persisted process declarations, returning an empty list when absent."""
+        path = self.path(self.layout.processes)
+        if not path.exists():
+            return []
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise ValueError(f"Runtime process manifest must be a JSON list: {path}")
+        return [RuntimeProcessSpec.model_validate(item) for item in payload]
 
     def write_snapshot(self, payload: Any) -> None:
         write_json(self.path(self.layout.snapshot), payload)

@@ -222,6 +222,12 @@ retry_policy: RuntimeRetryPolicy | None
 
 Business job specs can wrap or generate process specs.
 
+When a `RuntimeBackendExecutor` has a runtime directory, registration writes
+the current declarative spec list to `runtime/processes.json`. Readers may load
+that manifest through `RuntimeStore.load_process_specs()` without importing or
+constructing business process implementations. It is an observation and
+contract artifact, not a checkpoint for resuming arbitrary Python objects.
+
 ## RuntimeProcessCapabilities
 
 Capabilities describe operations the runtime may invoke.

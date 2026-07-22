@@ -71,6 +71,7 @@ def test_runtime_info_payload_is_json_safe(tmp_path):
     assert restored.job_type == "example.job"
     assert restored.runtime_files.progress == "runtime/progress.json"
     assert restored.runtime_files.runtime_events == "runtime/events.runtime.jsonl"
+    assert restored.runtime_files.processes == "runtime/processes.json"
 
 
 def test_runtime_store_writes_standard_files_and_lists_artifacts(tmp_path):
@@ -86,6 +87,7 @@ def test_runtime_store_writes_standard_files_and_lists_artifacts(tmp_path):
     store.write_runtime_info(info)
     store.write_status({"job_id": "job1", "status": "running"})
     store.write_progress({"task": {"current": 1}})
+    store.write_process_specs([RuntimeProcessSpec(process_id="process1", process_type="example.process")])
 
     runtime_info = json.loads((store.runtime_dir / "runtime_info.json").read_text(encoding="utf-8"))
     artifacts = list_runtime_artifacts(store.runtime_dir)
@@ -94,8 +96,10 @@ def test_runtime_store_writes_standard_files_and_lists_artifacts(tmp_path):
     assert {item["path"] for item in artifacts} == {
         "runtime_info.json",
         "runtime/progress.json",
+        "runtime/processes.json",
         "status.json",
     }
+    assert store.load_process_specs()[0].resolved_process_id() == "process1"
 
 
 def test_runtime_event_payload_is_json_safe():
@@ -477,6 +481,7 @@ def test_runtime_backend_executor_runs_processes_and_writes_projection(tmp_path)
     results = executor.run_all()
     projection = executor.projection()
     restored = RuntimeStore(tmp_path / "runtime").load_projection()
+    specs = RuntimeStore(tmp_path / "runtime").load_process_specs()
     event_ids = [event.event_id for event in executor.event_store.list()]
 
     assert results["p1"] == {"process_id": "p1"}
@@ -486,6 +491,7 @@ def test_runtime_backend_executor_runs_processes_and_writes_projection(tmp_path)
     assert projection.terminal_success_count == 2
     assert projection.processes["p2"].parent_process_id == "p1"
     assert restored == projection
+    assert [spec.resolved_process_id() for spec in specs] == ["p1", "p2"]
 
 
 def test_runtime_backend_executor_reports_failure_and_cancel(tmp_path):
