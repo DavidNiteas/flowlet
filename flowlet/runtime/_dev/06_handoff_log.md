@@ -1133,3 +1133,15 @@ Keep these in business packages:
 - Full MetaMSTools txn/CLI regression passes at 165 tests. Full
   MassLib4Search txn/CLI regression passes at 72 tests with one existing Ray
   FutureWarning. Ruff passes for all changed files.
+
+### Phase 11 Continued: Package Crash Reconciliation
+
+- Both package regressions create an active child process attempt, simulate a
+  backend process disappearing by expiring its lease, and restore through a
+  new backend instance.
+- Restore appends interrupted attempt/execution events and releases the
+  takeover lease. It does not mutate an active ledger row directly to failed.
+- `rebuild_ledger()`, `rebuild_commands()`, and a full
+  `RuntimeFrameworkReducer` projection all equal their materialized package
+  runtime state after reconciliation.
+- Focused crash tests and Ruff pass in both packages.

@@ -225,6 +225,12 @@ tests prove one winner among four concurrent acquirers and deterministic stale
 session reconciliation. Concurrent external reporters also allocate distinct
 attempt ordinals. Flowlet runtime tests pass at 82 tests.
 
+Package-level crash injection now starts a real child process attempt under
+each txn backend, lets its backend lease expire, and restores through a new
+backend instance. Both packages reconcile the child attempt and execution to
+`interrupted`. Their materialized ledger, command index, and framework
+projection compare equal to full rebuilds from canonical events afterward.
+
 ## Remaining Phases
 
 1. Finish execution-wave orchestration and fault injection around recovery
