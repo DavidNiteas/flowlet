@@ -103,11 +103,17 @@ Make standard events storable and compatible with current `TxnEvent`.
   - Flowlet manager records (`progress`, `signal`, `log`, `stream`, `telemetry`)
 - The sidecar writer is framework-only and does not import MetaMSTools or MassLib4Search.
 
+### Business Backend Integration Notes
+
+- MetaMSTools txn `EventBuffer` now mirrors emitted legacy events to `RuntimeEventSidecarWriter` when persistence is enabled.
+- MassLib4Search txn `EventBuffer` now mirrors emitted legacy events to `RuntimeEventSidecarWriter` when persistence is enabled.
+- Both integrations keep legacy `events.jsonl` unchanged.
+
 ### Remaining Phase 2 Work
 
-- Integrate the opt-in sidecar writer in current business backends.
 - Keep legacy `events.jsonl` unchanged until readers migrate.
 - Add fixtures from actual runtime files when a stable fixture location is selected.
+- Validate sidecar output on the real liver sample workspace.
 
 ## Phase 3: RuntimeProcess Contracts
 

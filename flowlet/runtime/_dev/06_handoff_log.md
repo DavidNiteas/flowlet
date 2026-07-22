@@ -128,9 +128,49 @@ Phase 1 is not fully complete until the schema is reviewed against real MetaMSTo
 
 Recommended next steps:
 
-1. Integrate `RuntimeEventSidecarWriter` in current business backends without changing their legacy `events.jsonl`.
-2. Add fixtures from actual runtime files once fixture ownership is decided.
-3. Keep CLI/TUI readers on existing projections until event-derived projections are implemented.
+1. Add fixtures from actual runtime files once fixture ownership is decided.
+2. Keep CLI/TUI readers on existing projections until event-derived projections are implemented.
+3. Continue Phase 3 `RuntimeProcess` contracts after sidecar validation lands.
+
+### Continued Progress: Business Sidecar Integration
+
+Added initial business-package integration:
+
+- MetaMSTools txn `EventBuffer` accepts an optional `RuntimeEventSidecarWriter`.
+- MassLib4Search txn `EventBuffer` accepts an optional `RuntimeEventSidecarWriter`.
+- Both backends create the writer for persisted runtime directories.
+- In-memory jobs keep sidecar writing disabled.
+- Restored jobs get a sidecar writer for future emitted events, but loading legacy `events.jsonl` does not replay old events into the sidecar.
+
+Compatibility behavior:
+
+- Existing `events.jsonl` is still written by the original `EventBuffer`.
+- Standard sidecar events are written to `runtime/events.runtime.jsonl`.
+- Existing event readers remain on the legacy stream.
+
+Added regression assertions in business backend tests:
+
+- MetaMSTools persisted inline runtime emits parseable `RuntimeEvent` sidecar events.
+- MassLib4Search persisted inline runtime emits parseable `RuntimeEvent` sidecar events.
+
+Validation commands:
+
+```bash
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime/_dev MetaMSTools/MetaMSTools/txn/backend/backend.py MetaMSTools/MetaMSTools/txn/backend/events.py MetaMSTools/tests/txn/backend/test_txn_backend.py MassLib4Search/python/MassLib4Search/txn/backend/backend.py MassLib4Search/python/MassLib4Search/txn/backend/events.py MassLib4Search/tests/txn/test_backend.py --fix
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime/_dev MetaMSTools/MetaMSTools/txn/backend/backend.py MetaMSTools/MetaMSTools/txn/backend/events.py MetaMSTools/tests/txn/backend/test_txn_backend.py MassLib4Search/python/MassLib4Search/txn/backend/backend.py MassLib4Search/python/MassLib4Search/txn/backend/events.py MassLib4Search/tests/txn/test_backend.py
+pixi run -e dev-all-gpu pytest flowlet/tests/test_runtime.py -q
+pixi run -e dev-all-gpu pytest MetaMSTools/tests/txn/backend/test_txn_backend.py -q
+pixi run -e dev-all-gpu pytest MassLib4Search/tests/txn/test_backend.py -q
+```
+
+Result:
+
+```text
+All checks passed.
+flowlet/tests/test_runtime.py: 15 passed.
+MetaMSTools/tests/txn/backend/test_txn_backend.py: 21 passed.
+MassLib4Search/tests/txn/test_backend.py: 13 passed.
+```
 
 ### Boundary Reminder
 
