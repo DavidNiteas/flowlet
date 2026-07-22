@@ -47,6 +47,9 @@ class RuntimeStore:
     def write_progress(self, payload: Any) -> None:
         write_json(self.path(self.layout.progress), payload)
 
+    def write_projection(self, payload: Any) -> None:
+        write_json(self.path(self.layout.projection), payload)
+
     def write_signals(self, payload: Any) -> None:
         write_json(self.path(self.layout.signals), payload)
 

@@ -37,6 +37,7 @@ from .process import (
     RuntimeUnsupportedOperationError,
     runtime_process_spec_payload,
 )
+from .projection import RuntimeFrameworkReducer, RuntimeProjection, RuntimeReducer, runtime_projection_payload
 from .schema import (
     RuntimeErrorInfo,
     RuntimeEvent,
@@ -61,6 +62,7 @@ __all__ = [
     "RuntimeEventStore",
     "RuntimeEventStatus",
     "RuntimeEventSidecarWriter",
+    "RuntimeFrameworkReducer",
     "RuntimeInfo",
     "RuntimeManagerBundle",
     "RuntimeProcess",
@@ -71,7 +73,9 @@ __all__ = [
     "RuntimeProcessRunner",
     "RuntimeProcessSpec",
     "RuntimeProcessState",
+    "RuntimeProjection",
     "RuntimeProgress",
+    "RuntimeReducer",
     "RuntimeResourceRequest",
     "RuntimeRetryPolicy",
     "RuntimeSnapshotLoader",
@@ -90,6 +94,7 @@ __all__ = [
     "runtime_event_payload",
     "runtime_info_payload",
     "runtime_process_spec_payload",
+    "runtime_projection_payload",
     "sse_encode_event",
     "stream_runtime_events",
     "txn_event_payload_to_runtime_event",

@@ -11,6 +11,7 @@ from flowlet.runtime import (
     RuntimeEventJsonlStore,
     RuntimeEventSidecarWriter,
     RuntimeEventStatus,
+    RuntimeFrameworkReducer,
     RuntimeInfo,
     RuntimeProcessBase,
     RuntimeProcessCapabilities,
@@ -19,6 +20,8 @@ from flowlet.runtime import (
     RuntimeProcessRunner,
     RuntimeProcessSpec,
     RuntimeProgress,
+    RuntimeProjection,
+    RuntimeReducer,
     RuntimeResourceRequest,
     RuntimeRetryPolicy,
     RuntimeSnapshotLoader,
@@ -31,6 +34,7 @@ from flowlet.runtime import (
     runtime_event_to_txn_event_payload,
     runtime_info_payload,
     runtime_process_spec_payload,
+    runtime_projection_payload,
     txn_event_payload_to_runtime_event,
 )
 
@@ -264,6 +268,57 @@ def test_runtime_process_runner_emits_failure_and_unsupported_events(tmp_path):
     assert store.list()[-1].error is not None
     assert store.list()[-1].error.type == "ValueError"
     assert [event.event_type for event in unsupported_store.list()] == ["process.start.unsupported"]
+
+
+def test_runtime_framework_reducer_reconstructs_process_state(tmp_path):
+    class ExampleProcess(RuntimeProcessBase):
+        def start(self, context: RuntimeProcessContext) -> dict[str, Any]:
+            context.emit_progress(1, total=2, description="half")
+            context.emit_artifact(context.artifact_path("result.json"), payload={"kind": "result"})
+            return {"ok": True}
+
+    store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
+    spec = RuntimeProcessSpec(process_id="process1", process_type="example.process")
+    context = RuntimeProcessContext(
+        runtime_id="runtime1",
+        process_id="process1",
+        event_store=store,
+        runtime_dir=tmp_path,
+    )
+    RuntimeProcessRunner(context).run(ExampleProcess(spec))
+
+    reducer: RuntimeReducer = RuntimeFrameworkReducer()
+    projection = reducer.reduce(store.list())
+
+    assert isinstance(projection, RuntimeProjection)
+    assert projection.runtime_id == "runtime1"
+    assert projection.status == RuntimeEventStatus.SUCCEEDED
+    assert projection.status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert projection.terminal_success_count == 1
+    assert projection.active_process_ids == []
+    assert projection.processes["process1"].status == RuntimeEventStatus.SUCCEEDED
+    assert projection.processes["process1"].result == {"ok": True}
+    assert projection.progress_summary["process1"].percent == 50.0
+    assert projection.artifact_index[0]["kind"] == "result"
+
+
+def test_runtime_framework_reducer_summarizes_failure_and_writes_projection(tmp_path):
+    store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
+    context = RuntimeProcessContext(runtime_id="runtime1", process_id="process1", event_store=store)
+    context.emit_status(RuntimeEventStatus.RUNNING)
+    context.emit_error(RuntimeErrorInfo(type="ExampleError", message="bad"))
+
+    projection_payload = runtime_projection_payload(store.list())
+    projection = RuntimeProjection.model_validate(projection_payload)
+    runtime_store = RuntimeStore(tmp_path / "runtime")
+    runtime_store.write_projection(projection_payload)
+    artifacts = list_runtime_artifacts(runtime_store.runtime_dir)
+
+    assert projection.status == RuntimeEventStatus.FAILED
+    assert projection.status_class == RuntimeStatusClass.TERMINAL_FAILURE
+    assert projection.terminal_failure_count == 1
+    assert projection.error_summary[0].type == "ExampleError"
+    assert {artifact["path"] for artifact in artifacts} == {"runtime/projection.json"}
 
 
 def test_runtime_process_base_reports_unsupported_operation(tmp_path):

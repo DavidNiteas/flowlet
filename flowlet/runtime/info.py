@@ -19,6 +19,7 @@ class RuntimeFileLayout(BaseModel):
     snapshot: str = "snapshot.json"
     monitor_snapshot: str = "monitor_snapshot.json"
     progress: str = "runtime/progress.json"
+    projection: str = "runtime/projection.json"
     signals: str = "runtime/signals.json"
     logs: str = "runtime/logs.jsonl"
     telemetry: str = "runtime/telemetry.jsonl"

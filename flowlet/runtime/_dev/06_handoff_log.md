@@ -245,6 +245,57 @@ All checks passed.
 21 passed.
 ```
 
+### Continued Progress: Runtime Projection Reducers
+
+Started Phase 4 implementation.
+
+Added:
+
+- `flowlet.runtime.projection.RuntimeProjection`
+- `RuntimeReducer`
+- `RuntimeFrameworkReducer`
+- `runtime_projection_payload(...)`
+- `RuntimeFileLayout.projection = "runtime/projection.json"`
+- `RuntimeStore.write_projection(...)`
+
+Scope:
+
+- The reducer consumes only standard `RuntimeEvent` objects.
+- The projection is framework-level state only.
+- It does not replace business `snapshot.json` or `monitor_snapshot.json`.
+- Business monitor summaries remain in MetaMSTools and MassLib4Search.
+
+The current framework reducer derives:
+
+- runtime status
+- process states
+- active process ids
+- terminal success/failure/cancelled counts
+- error summary
+- artifact index
+- progress summary
+
+Remaining Phase 4 work:
+
+- Make parent/child failure propagation rules explicit.
+- Add projection loading helpers if readers start consuming `runtime/projection.json`.
+- Keep business reducers out of Flowlet.
+
+Validation commands:
+
+```bash
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__init__.py flowlet/tests/test_runtime.py --fix
+pixi run -e dev-all-gpu ruff check flowlet/flowlet/runtime flowlet/flowlet/__init__.py flowlet/tests/test_runtime.py
+pixi run -e dev-all-gpu pytest flowlet/tests/test_runtime.py -q
+```
+
+Result:
+
+```text
+All checks passed.
+23 passed.
+```
+
 ### Boundary Reminder
 
 Do not add domain fields to `RuntimeEvent`.

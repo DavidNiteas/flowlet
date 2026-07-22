@@ -159,6 +159,8 @@ Introduce process as the minimum runtime operation unit.
 
 ## Phase 4: Runtime Projection Reducers
 
+Status: in progress.
+
 ### Goal
 
 Derive runtime state from standard events.
@@ -182,6 +184,27 @@ Derive runtime state from standard events.
 - Failed child process propagates framework-level failure state according to explicit rules.
 - Projection output is deterministic.
 - Existing snapshot loader remains compatible.
+
+### Current Implementation Notes
+
+- `RuntimeProjection` is introduced as the framework-level state projection.
+- `RuntimeReducer` is introduced as the reducer protocol.
+- `RuntimeFrameworkReducer` reduces standard `RuntimeEvent` streams into:
+  - runtime status
+  - process map
+  - active process ids
+  - terminal counts
+  - error summary
+  - artifact index
+  - progress summary
+- `RuntimeFileLayout.projection` defines `runtime/projection.json`.
+- `RuntimeStore.write_projection(...)` writes a projection payload without touching business `snapshot.json` or `monitor_snapshot.json`.
+
+### Remaining Phase 4 Work
+
+- Add parent/child failure propagation rules that are explicit and configurable.
+- Add projection loading helpers if CLI/TUI readers start consuming `runtime/projection.json`.
+- Add business reducers in MetaMSTools and MassLib4Search only after the framework projection stabilizes.
 
 ## Phase 5: Runtime Backend Executor Prototype
 
