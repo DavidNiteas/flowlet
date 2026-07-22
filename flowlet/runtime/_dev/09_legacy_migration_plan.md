@@ -132,7 +132,9 @@ Acceptance:
 
 - Each retained legacy write has a named consumer and removal date/version.
 - Sidecar replay, live SSE, process manifest, and projection are tested for
-  persisted success, failure, and cancellation cases.
+  persisted success, failure, and cancellation cases. Both package backend
+  suites directly assert standard HTTP replay for these root terminal status
+  classes.
 - The real liver regression passes for both packages with the same workspace
   ownership rules documented in `07_real_workspace_regression.md`.
 

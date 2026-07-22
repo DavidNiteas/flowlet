@@ -40,6 +40,14 @@ It records the current proof for framework contracts, package compatibility,
 real workspace runs, readers, and live observation, while explicitly retaining
 the Phase 9 external approval gates as non-complete work.
 
+### Standard Terminal Replay Coverage
+
+Both business backend suites now directly verify `/runtime-events` replay for
+root `terminal_success`, `terminal_failure`, and `terminal_cancelled` states.
+The failure and queued-cancellation cases use persisted standard sidecars and
+the public HTTP endpoint, so future standard-only rollout work has direct
+terminal transport coverage without changing the current dual-write default.
+
 ### MetaMSTools Fresh Regression
 
 Completed a fresh isolated three-file liver analysis using the synchronous
