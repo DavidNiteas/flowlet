@@ -10,6 +10,9 @@ The goal is to make Flowlet a business-neutral runtime framework for observable 
 - [02_event_and_process_contracts.md](02_event_and_process_contracts.md): Standard event and standard process contracts.
 - [03_compatibility_with_existing_backends.md](03_compatibility_with_existing_backends.md): Native compatibility plan for MetaMSTools and MassLib4Search.
 - [04_development_roadmap.md](04_development_roadmap.md): Phased implementation roadmap and acceptance criteria.
+- [05_boundary_audit.md](05_boundary_audit.md): Current Flowlet runtime boundary audit.
+- [06_handoff_log.md](06_handoff_log.md): Implementation handoff log.
+- [07_real_workspace_regression.md](07_real_workspace_regression.md): Real liver workspace regression procedure.
 
 ## Design Position
 
@@ -59,4 +62,3 @@ Compatibility means:
 - Existing `runtime-snapshot print --format json` behavior remains valid during migration.
 - Existing backend APIs and CLI/TUI consumers can be migrated incrementally.
 - Business-specific schemas can wrap or adapt Flowlet runtime events and processes without losing current fields.
-

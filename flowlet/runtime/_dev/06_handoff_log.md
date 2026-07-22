@@ -128,9 +128,10 @@ Phase 1 is not fully complete until the schema is reviewed against real MetaMSTo
 
 Recommended next steps:
 
-1. Add fixtures from actual runtime files once fixture ownership is decided.
-2. Keep CLI/TUI readers on existing projections until event-derived projections are implemented.
-3. Continue Phase 3 `RuntimeProcess` contracts after sidecar validation lands.
+1. Run strict sidecar validation on the real liver workspace after a fresh MetaMSTools and MassLib4Search execution.
+2. Add fixtures from actual runtime files once fixture ownership is decided.
+3. Keep CLI/TUI readers on existing projections until event-derived projections are implemented.
+4. Continue Phase 3 `RuntimeProcess` contracts after sidecar validation lands.
 
 ### Continued Progress: Business Sidecar Integration
 
@@ -171,6 +172,29 @@ flowlet/tests/test_runtime.py: 15 passed.
 MetaMSTools/tests/txn/backend/test_txn_backend.py: 21 passed.
 MassLib4Search/tests/txn/test_backend.py: 13 passed.
 ```
+
+### Continued Progress: Real Workspace Validator
+
+Added:
+
+- [07_real_workspace_regression.md](07_real_workspace_regression.md)
+- `validate_runtime_sidecar.py`
+
+The validator is framework-level only. It checks:
+
+- legacy `events.jsonl` exists and can be adapted to `RuntimeEvent`
+- optional strict standard sidecar validation for `runtime/events.runtime.jsonl`
+
+Current real workspace observation:
+
+```text
+.metams/runtime: 292 legacy events, no sidecar events.
+.annotation/spec_spec_unispec_pos/runtime: 185 legacy events, no sidecar events.
+```
+
+This is expected for historical runs made before sidecar writing was added.
+Strict validation should be run only after a fresh execution with the current
+code.
 
 ### Boundary Reminder
 

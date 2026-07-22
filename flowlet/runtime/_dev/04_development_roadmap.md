@@ -112,8 +112,9 @@ Make standard events storable and compatible with current `TxnEvent`.
 ### Remaining Phase 2 Work
 
 - Keep legacy `events.jsonl` unchanged until readers migrate.
-- Add fixtures from actual runtime files when a stable fixture location is selected.
-- Validate sidecar output on the real liver sample workspace.
+- Add fixtures from actual runtime files when fixture ownership is decided.
+- Use [07_real_workspace_regression.md](07_real_workspace_regression.md) as the real liver sample validation procedure.
+- Validate strict sidecar output on the real liver sample workspace after a fresh run.
 
 ## Phase 3: RuntimeProcess Contracts
 
