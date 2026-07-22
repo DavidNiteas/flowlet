@@ -63,22 +63,49 @@ class RuntimeBackendExecutor:
 
     def cancel_process(self, process_id: str) -> None:
         """Dispatch a cancel hook when supported."""
-        process = self._get_process(process_id)
-        context = self._context_for(process)
-        if not process.spec.capabilities.supports(RuntimeProcessOperation.CANCEL):
-            error = RuntimeUnsupportedOperationError(process_id, RuntimeProcessOperation.CANCEL)
-            context.emit_error(error.to_error_info(), event_type="process.cancel.unsupported")
-            self.write_projection()
-            raise error
-        context.request_cancel()
-        try:
-            process.cancel(context)
-        except RuntimeUnsupportedOperationError as exc:
-            context.emit_error(exc.to_error_info(), event_type=f"process.{exc.operation.value}.unsupported")
-            self.write_projection()
-            raise
-        context.emit_status(RuntimeEventStatus.CANCELLED, message="process cancelled")
-        self.write_projection()
+        self._dispatch_hook(
+            process_id,
+            RuntimeProcessOperation.CANCEL,
+            terminal_status=RuntimeEventStatus.CANCELLED,
+            terminal_message="process cancelled",
+            request_cancel=True,
+        )
+
+    def pause_process(self, process_id: str) -> None:
+        """Dispatch a pause hook when supported."""
+        self._dispatch_hook(
+            process_id,
+            RuntimeProcessOperation.PAUSE,
+            terminal_status="paused",
+            terminal_message="process paused",
+        )
+
+    def resume_process(self, process_id: str) -> None:
+        """Dispatch a resume hook when supported."""
+        self._dispatch_hook(
+            process_id,
+            RuntimeProcessOperation.RESUME,
+            terminal_status=RuntimeEventStatus.RUNNING,
+            terminal_message="process resumed",
+        )
+
+    def retry_process(self, process_id: str) -> Any:
+        """Dispatch a retry hook when supported."""
+        return self._dispatch_hook(
+            process_id,
+            RuntimeProcessOperation.RETRY,
+            terminal_status=RuntimeEventStatus.SUCCEEDED,
+            terminal_message="process retried",
+        )
+
+    def cleanup_process(self, process_id: str) -> None:
+        """Dispatch a cleanup hook when supported."""
+        self._dispatch_hook(
+            process_id,
+            RuntimeProcessOperation.CLEANUP,
+            terminal_status=RuntimeEventStatus.SUCCEEDED,
+            terminal_message="process cleaned up",
+        )
 
     def projection(self) -> RuntimeProjection:
         """Return the current framework projection."""
@@ -108,6 +135,38 @@ class RuntimeBackendExecutor:
             return self._processes[process_id]
         except KeyError as exc:
             raise KeyError(f"Runtime process {process_id!r} is not registered.") from exc
+
+    def _dispatch_hook(
+        self,
+        process_id: str,
+        operation: RuntimeProcessOperation,
+        *,
+        terminal_status: RuntimeEventStatus | str,
+        terminal_message: str,
+        request_cancel: bool = False,
+    ) -> Any:
+        process = self._get_process(process_id)
+        context = self._context_for(process)
+        if not process.spec.capabilities.supports(operation):
+            error = RuntimeUnsupportedOperationError(process_id, operation)
+            context.emit_error(error.to_error_info(), event_type=f"process.{operation.value}.unsupported")
+            self.write_projection()
+            raise error
+        if request_cancel:
+            context.request_cancel()
+        try:
+            result = getattr(process, operation.value)(context)
+        except RuntimeUnsupportedOperationError as exc:
+            context.emit_error(exc.to_error_info(), event_type=f"process.{exc.operation.value}.unsupported")
+            self.write_projection()
+            raise
+        context.emit_status(
+            terminal_status,
+            message=terminal_message,
+            payload={"result": result if isinstance(result, dict) else {"value": result}},
+        )
+        self.write_projection()
+        return result
 
 
 def _next_event_id(events: list[Any]) -> int:

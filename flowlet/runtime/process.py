@@ -496,7 +496,7 @@ def _next_numeric_event_id(event_id: int | str) -> int:
 def _status_class(status: RuntimeEventStatus | str) -> RuntimeStatusClass:
     if status in {RuntimeEventStatus.PENDING, "created", "queued", "pending"}:
         return RuntimeStatusClass.NOT_STARTED
-    if status in {RuntimeEventStatus.RUNNING, "running"}:
+    if status in {RuntimeEventStatus.RUNNING, "running", "paused"}:
         return RuntimeStatusClass.ACTIVE
     if status in {RuntimeEventStatus.SUCCEEDED, "completed", "succeeded"}:
         return RuntimeStatusClass.TERMINAL_SUCCESS

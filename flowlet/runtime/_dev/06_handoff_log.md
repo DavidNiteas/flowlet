@@ -313,6 +313,8 @@ Scope:
 - It persists standard events to a `RuntimeEventStore`.
 - It writes framework projection output to `runtime/projection.json`.
 - It dispatches cancel hooks and emits unsupported-operation events when cancel is not supported.
+- It dispatches pause, resume, retry, and cleanup hooks with the same supported/unsupported event pattern.
+- A `paused` status projects as an active process; it is not a terminal outcome.
 - It does not define queueing, threading, retry policy execution, business job lifecycle, or business monitor semantics.
 
 Current tests cover:
@@ -323,10 +325,11 @@ Current tests cover:
 - process failure event emission
 - supported cancel hook dispatch
 - unsupported cancel event emission
+- supported pause/resume/retry/cleanup hook dispatch
+- unsupported retry event emission
 
 Remaining Phase 5 work:
 
-- Add pause/resume/retry/cleanup dispatch.
 - Decide `RuntimeManagerBundle` integration.
 - Keep business lifecycle adapters outside Flowlet.
 
@@ -342,7 +345,7 @@ Result:
 
 ```text
 All checks passed.
-26 passed.
+27 passed.
 ```
 
 ### Boundary Reminder

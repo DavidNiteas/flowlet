@@ -432,6 +432,63 @@ def test_runtime_backend_executor_reports_failure_and_cancel(tmp_path):
     assert projection.processes["cancel"].status_class == RuntimeStatusClass.TERMINAL_CANCELLED
 
 
+def test_runtime_backend_executor_dispatches_optional_hooks(tmp_path):
+    class HookProcess(RuntimeProcessBase):
+        def pause(self, context: RuntimeProcessContext) -> None:
+            context.emit_log("pause hook")
+
+        def resume(self, context: RuntimeProcessContext) -> None:
+            context.emit_log("resume hook")
+
+        def retry(self, context: RuntimeProcessContext) -> dict[str, Any]:
+            context.emit_log("retry hook")
+            return {"retry": True}
+
+        def cleanup(self, context: RuntimeProcessContext) -> None:
+            context.emit_log("cleanup hook")
+
+    executor = RuntimeBackendExecutor(runtime_id="runtime1", runtime_dir=tmp_path / "runtime")
+    executor.register(
+        HookProcess(
+            RuntimeProcessSpec(
+                process_id="hooks",
+                process_type="example.hooks",
+                capabilities=RuntimeProcessCapabilities(
+                    can_pause=True,
+                    can_resume=True,
+                    can_retry=True,
+                    can_cleanup=True,
+                ),
+            )
+        )
+    )
+    executor.register(RuntimeProcessBase(RuntimeProcessSpec(process_id="unsupported", process_type="example.base")))
+
+    executor.pause_process("hooks")
+    executor.resume_process("hooks")
+    retry_result = executor.retry_process("hooks")
+    executor.cleanup_process("hooks")
+    try:
+        executor.retry_process("unsupported")
+    except RuntimeUnsupportedOperationError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("unsupported retry should raise")
+
+    event_types = [event.event_type for event in executor.event_store.list()]
+    statuses = [event.status for event in executor.event_store.list() if event.event_type == "process.status.changed"]
+
+    assert retry_result == {"retry": True}
+    assert event_types.count("log.emitted") == 4
+    assert "process.retry.unsupported" in event_types
+    assert statuses == [
+        "paused",
+        RuntimeEventStatus.RUNNING,
+        RuntimeEventStatus.SUCCEEDED,
+        RuntimeEventStatus.SUCCEEDED,
+    ]
+
+
 def test_runtime_process_base_reports_unsupported_operation(tmp_path):
     store = RuntimeEventJsonlStore(tmp_path / "events.runtime.jsonl")
     context = RuntimeProcessContext(runtime_id="runtime1", process_id="process1", event_store=store)
