@@ -17,6 +17,7 @@ The goal is to make Flowlet a business-neutral runtime framework for observable 
 - [09_legacy_migration_plan.md](09_legacy_migration_plan.md): Gated plan for retiring duplicated legacy event writes without losing historical compatibility.
 - [10_legacy_consumer_census.md](10_legacy_consumer_census.md): Repository-owned legacy event readers and writers for Phase 9 Wave 1.
 - [11_live_presentation_contract.md](11_live_presentation_contract.md): Read-only live GUI/TUI standard-event transport and presentation contract.
+- [12_endpoint_version_policy.md](12_endpoint_version_policy.md): Approval-ready policy and consumer-census template for legacy event endpoints.
 
 ## Design Position
 

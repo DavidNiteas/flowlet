@@ -59,7 +59,7 @@ status; they do not duplicate projection/manifest loading logic.
 | HTTP client | `runtime_events()` | Same | Additive and available |
 | Runtime snapshot CLI/TUI | Projection + process-spec read-only page | Projection + process-spec read-only section | Available from persisted files |
 | Interactive job TUI | Business snapshots/monitor | Business snapshots/monitor | No live standard feed |
-| Browser GUI | Legacy SSE and snapshot-polling WebSocket | No equivalent package GUI | No standard browser feed |
+| Browser GUI | Additive standard SSE/observation proxy plus legacy SSE and snapshot-polling WebSocket | No equivalent package GUI | Meta framework observation available; legacy monitor unchanged |
 
 ## Standard Frame Contract
 
@@ -194,7 +194,8 @@ This is a proposal requiring package/product owner approval:
 | Meta GUI task WebSocket | Supported business snapshot transport | Separate standard WebSocket decision |
 
 No endpoint is deprecated by this proposal until an owner publishes a version,
-notice period, and migration guide.
+notice period, and migration guide. The approval-ready record is
+`12_endpoint_version_policy.md`.
 
 ## Implementation Order
 

@@ -98,6 +98,8 @@ Acceptance:
 Repository-owned consumers are recorded in
 `10_legacy_consumer_census.md`. The outstanding work is the external consumer
 census and product approval; it is not safe to infer either from source search.
+The approval gates and version-policy template are in
+`12_endpoint_version_policy.md`.
 
 ### Wave 2: Package-Owned Standard Presentation Adapter
 

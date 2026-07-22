@@ -25,6 +25,14 @@ inputs. Do not overwrite `.metams/runtime`, an existing annotation id, or study
 results. Record the commands and artifact counts in
 [07_real_workspace_regression.md](07_real_workspace_regression.md).
 
+### Endpoint Version Policy Draft
+
+Added [12_endpoint_version_policy.md](12_endpoint_version_policy.md). It
+records the supported dual-write default, external-consumer census table,
+approval gates, deprecation notice template, standard-only rollout conditions,
+and sign-off roles. This is the remaining non-code prerequisite for Phase 9
+legacy writer removal; no endpoint behavior changed.
+
 ### MetaMSTools Fresh Regression
 
 Completed a fresh isolated three-file liver analysis using the synchronous
