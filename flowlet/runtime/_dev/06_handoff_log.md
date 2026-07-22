@@ -1066,7 +1066,7 @@ Keep these in business packages:
   next ordinal, and link `resumed_from_attempt_id` to the prior durable
   attempt.
 - Flowlet Ruff and all 82 runtime tests pass. MassLib4Search backend, recovery,
-  and annotation workflow Ruff and 48 tests pass, including Ray. A focused
+  and annotation workflow Ruff and 49 tests pass, including Ray. A focused
   fault-injection regression proves failed attempt 1 followed by successful
   continuation attempt 2 in the same runtime lineage.
 - Remaining work is MetaMSTools study finalization/public continuation,
