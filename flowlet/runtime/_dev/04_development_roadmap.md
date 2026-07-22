@@ -428,7 +428,7 @@ decision.
 
 ## Phase 10: Recoverable Process Runtime
 
-Status: in progress. See
+Status: complete. See
 [14_recoverable_process_runtime.md](14_recoverable_process_runtime.md).
 
 ### Goal
@@ -455,6 +455,11 @@ The detailed compatibility and behavioral criteria in
 `14_recoverable_process_runtime.md` pass through Pixi tests and isolated real
 workspace runs. Legacy runtime readers and business output layouts remain
 unchanged.
+
+Acceptance completed on 2026-07-22. The real liver regression proves
+MetaMSTools `skip, skip, restart` and MassLib4Search
+`skip, skip, retry, resume`, including checkpoint cursor use, unchanged reused
+run outputs, append-only resumed-job lifecycle, and strict sidecar validation.
 
 ## Standard Regression Commands
 

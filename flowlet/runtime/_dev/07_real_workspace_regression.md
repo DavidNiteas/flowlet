@@ -283,3 +283,59 @@ using business snapshots:
 The strict sidecar/current-layout validator was rerun at the same time and
 passed for both directories (334/335 MetaMSTools legacy/standard events;
 185/186 MassLib4Search legacy/standard events).
+
+## Recoverable Process Regression, 2026-07-22
+
+Fresh isolated suffixes were used; no prior fixture was overwritten.
+
+MetaMSTools recovery paths:
+
+```text
+study:   .metams/recovery_regression_cursor_v2
+runtime: .metams/runtime_recovery_regression_cursor_v2
+plan:    skip(Liver-1), skip(Liver-2), restart(Liver-3)
+```
+
+The copied Liver-3 study shards and copied streaming sidecars were removed
+before planning. Only Liver-3 executed. Its attempt succeeded, the persisted
+study loads all three run ids with three ion clouds and three feature
+mappings, and the standard event stream contains unique ids `0..7`.
+
+This runtime is written directly by `RuntimeBackendExecutor`, so it has no
+legacy stream. It passes:
+
+```bash
+pixi run -e dev-all-gpu python flowlet/flowlet/runtime/_dev/validate_runtime_sidecar.py \
+  --require-sidecar --require-current-layout --allow-standard-only \
+  "$workspace/.metams/runtime_recovery_regression_cursor_v2"
+```
+
+MassLib4Search recovery paths:
+
+```text
+runtime: .annotation/runtime_recovery_regression_cursor_v2/runtime
+result:  annotations/runtime_recovery_regression_cursor_v2/search_annotation_results_lib
+source job:  4912235e035c477fb8f6a03fc0df0068
+resume job:  b2ba37c584294c9c9e9e62ecb1c3a175
+plan: skip(Liver-1), skip(Liver-2), retry(Liver-3), resume(study)
+```
+
+Only the new Liver-3 result shard was removed and marked failed. The study
+checkpoint cursor listed the completed Liver-1 and Liver-2 processes. Resume
+reported those runs as `skipped_existing`, Liver-3 as `resume_pending` then
+completed, and retained the pre-resume hashes:
+
+```text
+Liver-1 65b407417a0469b79d31014c719ae5f6c6481774ccb0b1aad9843093eaa04e8f
+Liver-2 a18014cfb0741520920734a0b25406f49bee26e2d8259fd2da25d30110e483fc
+```
+
+The final aggregate has 3 run results, 42 feature candidates, 74 wild MS2
+candidates, and 116 final scores. The shared runtime manifest declares both
+jobs. Its 273 standard event ids are unique and monotonic from `0`; the 271
+legacy events remain readable. Strict current-layout validation passes without
+standard-only mode, and framework `RuntimeObservation` reports `succeeded`.
+
+The same non-fatal `unimol`/`clip` model warning appeared during both fresh and
+resumed annotation execution. It remains a separate model-configuration issue,
+not a runtime recovery failure.

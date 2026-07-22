@@ -894,3 +894,23 @@ Keep these in business packages:
 - Study/workspace paths as interpreted domain concepts.
 - Business monitor summaries.
 - Resume policy.
+
+### Phase 10 Completion: Recoverable Process Runtime
+
+- Flowlet now provides dependency-aware recovery planning, immutable attempts,
+  committed checkpoint references, plan persistence, and package process
+  dispatch.
+- Runtime continuation is append-only. Empty native executors start at event
+  `0`; executors reopening a runtime load its prior events. Compatibility
+  buffers can continue a persisted cursor without replaying old events into a
+  new job window.
+- MassLib4Search resume preserves prior process declarations, appends its new
+  job declaration, continues unique event ids, and ignores old-job terminal
+  events when deciding whether the current legacy stream is complete.
+- The real liver acceptance passed MetaMSTools `skip, skip, restart` and
+  MassLib4Search `skip, skip, retry, resume`. Strict layouts pass at 0/8
+  legacy/standard Meta events and 271/273 Mass events. Reused Mass run hashes
+  are unchanged and the final annotation has 116 scores.
+- Native standard-only runtimes use the validator's explicit
+  `--allow-standard-only` option. This does not relax root declaration,
+  process manifest, projection, or sidecar checks.

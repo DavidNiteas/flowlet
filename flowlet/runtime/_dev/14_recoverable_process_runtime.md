@@ -2,9 +2,9 @@
 
 ## Status
 
-Phase 10 design baseline and implementation handoff. The first schema increment
-is implemented; planner, reducer, executor, and package adapters remain staged
-work described below.
+Phase 10 implementation and real-workspace acceptance are complete. Schema,
+planner, reducer, executor, package adapters, and isolated liver recovery
+evidence are available for maintenance and follow-on control-plane work.
 
 ## Objective
 
@@ -125,7 +125,8 @@ new fields are optional or have backward-compatible defaults.
    processes; MassLib4Search persists a plan before its existing resume
    executor starts. Package tests cover partial MassLib4Search retry and study
    checkpoint continuation.
-7. Run isolated real-liver skip, failure/retry, and checkpoint-resume cases.
+7. Completed: isolated real-liver skip, failure/retry, and checkpoint-resume
+   cases pass strict current-layout validation.
 
 ## Acceptance
 
@@ -174,3 +175,50 @@ transition. It preserves a successful `run1`, records failed `run2`, builds a
 then executes resume. The resulting manifest reports `run1` as
 `skipped_existing`, `run2` as completed from `resume_pending`, and the final
 aggregate contains both runs.
+
+## Runtime Continuation Contract
+
+A persisted runtime directory is one append-only observation namespace. A
+resume job that reuses that directory is a new declared process in the same
+namespace, not a replacement root:
+
+- Keep the original event `0` root declaration and all prior process specs.
+- Append the resumed job process spec and its `process.created` event.
+- Continue both standard and compatibility event ids monotonically; never
+  restart either stream at `0` or `1`.
+- A compatibility event buffer may initialize its next id from persisted
+  state without replaying historical events into the new in-memory job window.
+- Stream termination must match the requested process id. A terminal event
+  from a prior job in the same runtime cannot terminate the resumed job stream.
+
+`RuntimeBackendExecutor` loads an existing standard event store before
+registering processes. Empty native runtimes begin at event `0`.
+`RuntimeEventSidecarWriter.next_event_id()` and `EventBuffer.initial_event_id`
+provide the compatibility bridge for package backends.
+
+Native Flowlet recovery executors intentionally do not synthesize a legacy
+`events.jsonl`. Strict validation uses `--allow-standard-only` for that case;
+all process-manifest, root-declaration, projection, and event-order checks
+remain required.
+
+## Real Liver Acceptance
+
+The isolated 2026-07-22 regression used the real three-run liver workspace.
+
+- MetaMSTools copied a completed study to
+  `.metams/recovery_regression_cursor_v2`, removed only the copied Liver-3
+  shard, and wrote runtime state to
+  `.metams/runtime_recovery_regression_cursor_v2`. The plan was
+  `skip, skip, restart`; one attempt succeeded, the reconstructed study loads
+  Liver-1/2/3, and all eight standard event ids are unique from `0` through
+  `7`.
+- MassLib4Search used annotation id
+  `runtime_recovery_regression_cursor_v2`. After a fresh three-run result,
+  only its Liver-3 shard was removed and marked failed. The plan was
+  `skip, skip, retry, resume`; Liver-1/2 hashes were unchanged, Liver-3 was
+  completed from `resume_pending`, and the final aggregate contains 116 final
+  scores. The shared runtime contains both job declarations and 273 unique,
+  monotonic standard events beginning at `0`.
+- Strict current-layout validation passes for MetaMSTools with 0 legacy / 8
+  standard events in standard-only mode, and for MassLib4Search with 271
+  legacy / 273 standard events in compatibility mode.

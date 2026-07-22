@@ -25,6 +25,11 @@ def main() -> int:
             "process manifest, root process.created event id 0, and a consistent projection."
         ),
     )
+    parser.add_argument(
+        "--allow-standard-only",
+        action="store_true",
+        help="Allow native Flowlet runtimes that intentionally have no legacy events.jsonl stream.",
+    )
     args = parser.parse_args()
 
     failed = False
@@ -33,6 +38,7 @@ def main() -> int:
             runtime_dir,
             require_sidecar=args.require_sidecar,
             require_current_layout=args.require_current_layout,
+            allow_standard_only=args.allow_standard_only,
         )
         failed = failed or not result
     return 1 if failed else 0
@@ -43,6 +49,7 @@ def validate_runtime_dir(
     *,
     require_sidecar: bool = False,
     require_current_layout: bool = False,
+    allow_standard_only: bool = False,
 ) -> bool:
     legacy_path = runtime_dir / "events.jsonl"
     sidecar_path = runtime_dir / "runtime" / "events.runtime.jsonl"
@@ -50,7 +57,7 @@ def validate_runtime_dir(
     sidecar_events = _load_sidecar_events(sidecar_path)
     sidecar_count = len(sidecar_events)
 
-    ok = legacy_count > 0
+    ok = legacy_count > 0 or (allow_standard_only and sidecar_count > 0)
     if require_sidecar:
         ok = ok and sidecar_count > 0
     current_layout: dict[str, bool] | None = None
@@ -65,6 +72,7 @@ def validate_runtime_dir(
                 "sidecar_events": sidecar_count,
                 "sidecar_required": require_sidecar,
                 "current_layout_required": require_current_layout,
+                "standard_only_allowed": allow_standard_only,
                 "current_layout": current_layout,
                 "ok": ok,
             },
