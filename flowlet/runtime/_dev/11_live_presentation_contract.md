@@ -19,11 +19,38 @@ The contract applies to read-only observability surfaces only:
 It does not define task control, job cancellation, retry, resume, scheduling,
 run/stage/FSM hierarchy, workspace navigation, or result interpretation.
 
+## Runtime Observation Snapshot
+
+Both business backend APIs expose the additive JSON endpoint:
+
+```text
+GET /api/jobs/{job_id}/runtime-observation
+```
+
+The response is deliberately framework-only:
+
+```json
+{
+  "runtime_id": "<business job id>",
+  "projection": { "...": "RuntimeProjection or null" },
+  "process_specs": [{ "...": "RuntimeProcessSpec" }]
+}
+```
+
+It returns `409 Conflict` when neither a projection nor a process declaration
+is available. It does not expose or derive business run/stage/FSM detail. Both
+HTTP clients expose `runtime_observation()`, and MetaMSTools GUI proxies it at:
+
+```text
+GET /api/v1/tasks/{task_id}/runtime-observation
+```
+
 ## Current Baseline
 
 | Surface | MetaMSTools | MassLib4Search | Standard-event state |
 | --- | --- | --- | --- |
 | Backend SSE | `/api/jobs/{id}/runtime-events` | Same | Additive and available |
+| Backend snapshot | `/api/jobs/{id}/runtime-observation` | Same | Framework-only additive JSON |
 | HTTP client | `runtime_events()` | Same | Additive and available |
 | Runtime snapshot CLI/TUI | Projection + process-spec read-only page | Projection + process-spec read-only section | Available from persisted files |
 | Interactive job TUI | Business snapshots/monitor | Business snapshots/monitor | No live standard feed |

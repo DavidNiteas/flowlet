@@ -126,6 +126,14 @@ the artifact listing and returns the same error before opening its SSE proxy.
 The legacy `/events` endpoints and historical snapshot readers remain
 unchanged.
 
+### Runtime Observation API
+
+Both backend APIs now expose a framework-only `runtime-observation` JSON
+resource containing the persisted projection and process declarations. Their
+HTTP clients expose `runtime_observation()`, and MetaMSTools GUI proxies the
+same resource. This gives live UI work a stable read-only observation snapshot
+without exposing business monitor inference or controls.
+
 ### Completed
 
 - Added initial design document set under `flowlet/flowlet/runtime/_dev`.
