@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from .durable_store import RuntimeDurableStore
-from .process import RuntimeProcessOperation, RuntimeProcessSpec
+from .process import RuntimeProcessContext, RuntimeProcessOperation, RuntimeProcessSpec
 from .recovery import RuntimeProcessAttempt
 from .schema import (
     RuntimeErrorInfo,
@@ -57,6 +57,40 @@ class RuntimeProcessAttemptReporter:
             resumed_from_attempt_id=resumed_from_attempt_id,
             checkpoint_id=checkpoint_id,
             metadata=metadata,
+        )
+
+    def context(
+        self,
+        attempt: RuntimeProcessAttempt | str,
+        *,
+        runtime_dir: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeProcessContext:
+        """Build a standard event context for externally scheduled process work."""
+        attempt_id = attempt.attempt_id if isinstance(attempt, RuntimeProcessAttempt) else attempt
+        current = (
+            attempt
+            if isinstance(attempt, RuntimeProcessAttempt)
+            else self.store.load_process_attempt(attempt_id)
+        )
+        if current is None:
+            raise KeyError(f"Unknown attempt_id: {attempt_id!r}")
+        identity = self.store.identity()
+        if identity is None:  # pragma: no cover - durable stores require identity
+            raise ValueError("Durable runtime store has no identity")
+        specs = {spec.resolved_process_id(): spec for spec in self.store.load_process_specs()}
+        spec = specs.get(current.process_id)
+        return RuntimeProcessContext(
+            runtime_id=identity.runtime_id,
+            process_id=current.process_id,
+            parent_process_id=spec.parent_process_id if spec is not None else None,
+            event_store=self.store,
+            execution_id=current.execution_id or self.execution_id,
+            attempt_id=current.attempt_id,
+            checkpoint_id=current.checkpoint_id,
+            runtime_dir=runtime_dir,
+            metadata={**current.metadata, **(metadata or {})},
+            event_id_start=self.store.last_event_sequence() + 1,
         )
 
     def skip(

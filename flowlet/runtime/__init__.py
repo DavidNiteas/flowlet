@@ -20,6 +20,12 @@ from .backend import (
     write_runtime_status,
 )
 from .bundle import RuntimeManagerBundle
+from .channel import (
+    RuntimeCancellationState,
+    RuntimeEventChannel,
+    RuntimeEventProxy,
+    runtime_event_now,
+)
 from .command import (
     RuntimeCommandConflictError,
     RuntimeCommandRecord,
@@ -51,6 +57,8 @@ from .process import (
     RuntimeResourceRequest,
     RuntimeResourceUsage,
     RuntimeRetryPolicy,
+    RuntimeUnitSpan,
+    RuntimeUnitState,
     RuntimeUnsupportedOperationError,
     runtime_process_spec_payload,
 )
@@ -105,9 +113,12 @@ from .stream import (
     stream_runtime_event_store,
     wait_runtime_event_store,
 )
+from .wrappers import CallableRuntimeProcess, FSMRuntimeProcess
 
 __all__ = [
+    "CallableRuntimeProcess",
     "EventBuffer",
+    "FSMRuntimeProcess",
     "FlowletJobBackendBase",
     "LEGACY_TXN_EVENT_TYPE_MAP",
     "NON_TERMINAL_JOB_STATUSES",
@@ -115,6 +126,7 @@ __all__ = [
     "RuntimeCheckpointMode",
     "RuntimeCheckpointPolicy",
     "RuntimeCheckpointRef",
+    "RuntimeCancellationState",
     "RuntimeCommandConflictError",
     "RuntimeCommandRecord",
     "RuntimeCommandReducer",
@@ -125,7 +137,9 @@ __all__ = [
     "RuntimeErrorInfo",
     "RuntimeEvent",
     "RuntimeEventCursor",
+    "RuntimeEventChannel",
     "RuntimeEventJsonlStore",
+    "RuntimeEventProxy",
     "RuntimeEventStore",
     "RuntimeEventStatus",
     "RuntimeEventType",
@@ -182,6 +196,8 @@ __all__ = [
     "RuntimeSnapshotView",
     "RuntimeStore",
     "RuntimeStatusClass",
+    "RuntimeUnitSpan",
+    "RuntimeUnitState",
     "RuntimeUnsupportedOperationError",
     "TERMINAL_JOB_STATUSES",
     "export_runtime_manager_files",
@@ -194,6 +210,7 @@ __all__ = [
     "new_mirror_offsets",
     "parse_sse_runtime_events",
     "runtime_event_to_txn_event_payload",
+    "runtime_event_now",
     "runtime_event_payload",
     "runtime_info_payload",
     "runtime_process_spec_payload",

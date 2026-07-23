@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
@@ -195,6 +196,28 @@ class RuntimeProcessState(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class RuntimeUnitState(BaseModel):
+    """Framework-level state snapshot for one observable unit inside a process."""
+
+    unit_id: str
+    unit_type: str | None = None
+    process_id: str | None = None
+    parent_process_id: str | None = None
+    parent_unit_id: str | None = None
+    subject_type: str | None = None
+    subject_id: str | None = None
+    status: RuntimeEventStatus | str = RuntimeEventStatus.PENDING
+    status_class: RuntimeStatusClass = RuntimeStatusClass.NOT_STARTED
+    started_at: float | None = None
+    updated_at: float | None = None
+    finished_at: float | None = None
+    progress: RuntimeProgress | None = None
+    result: dict[str, Any] | None = None
+    error: RuntimeErrorInfo | None = None
+    event_count: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RuntimeUnsupportedOperationError(RuntimeError):
     """Raised when a process operation is not supported by its contract."""
 
@@ -304,6 +327,151 @@ class RuntimeProcessContext:
             status_class=_status_class(status),
             progress=progress,
             metadata=metadata,
+        )
+
+    def emit_unit(
+        self,
+        event_type: RuntimeEventType | str,
+        unit_id: str,
+        *,
+        unit_type: str | None = None,
+        parent_unit_id: str | None = None,
+        subject_type: str = "unit",
+        subject_id: str | None = None,
+        status: RuntimeEventStatus | str | None = None,
+        status_class: RuntimeStatusClass | None = None,
+        progress: RuntimeProgress | None = None,
+        message: str | None = None,
+        error: RuntimeErrorInfo | Exception | None = None,
+        payload: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeEvent:
+        """Emit an observation event for a non-restartable unit inside this process."""
+        if not unit_id.strip():
+            raise ValueError("unit_id must not be empty")
+        error_info = (
+            error
+            if isinstance(error, RuntimeErrorInfo)
+            else RuntimeErrorInfo(type=type(error).__name__, message=str(error))
+            if error is not None
+            else None
+        )
+        return self._emit(
+            str(event_type),
+            status=status,
+            status_class=status_class or (_status_class(status) if status is not None else None),
+            progress=progress,
+            message=message,
+            error=error_info,
+            payload={"unit_id": unit_id, "unit_type": unit_type, **(payload or {})},
+            metadata=metadata,
+            subject_type=subject_type,
+            subject_id=subject_id or unit_id,
+            parent_subject_id=parent_unit_id,
+        )
+
+    def observe_unit(
+        self,
+        unit_id: str,
+        *,
+        unit_type: str | None = None,
+        parent_unit_id: str | None = None,
+        subject_type: str = "unit",
+        subject_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+        on_cancelled: Callable[[], bool] | None = None,
+    ) -> RuntimeUnitSpan:
+        """Return a context manager that emits standard unit lifecycle events."""
+        return RuntimeUnitSpan(
+            self,
+            unit_id=unit_id,
+            unit_type=unit_type,
+            parent_unit_id=parent_unit_id,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            metadata=metadata,
+            payload=payload,
+            on_cancelled=on_cancelled,
+        )
+
+    def observe_task(
+        self,
+        task_id: str,
+        description: str | None = None,
+        *,
+        total: float | int | None = None,
+        unit: str | None = None,
+        parent_unit_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        on_cancelled: Callable[[], bool] | None = None,
+    ) -> RuntimeUnitSpan:
+        """Compatibility alias for a unit span."""
+        payload = {
+            "description": description,
+            "total": total,
+            "unit": unit,
+        }
+        return self.observe_unit(
+            task_id,
+            unit_type="task",
+            parent_unit_id=parent_unit_id,
+            metadata=metadata,
+            payload={key: value for key, value in payload.items() if value is not None},
+            on_cancelled=on_cancelled,
+        )
+
+    def observe_fsm_transition(
+        self,
+        transition: str,
+        *,
+        source: str | None = None,
+        target: str | None = None,
+        unit_id: str | None = None,
+        parent_unit_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+        on_cancelled: Callable[[], bool] | None = None,
+    ) -> RuntimeUnitSpan:
+        """Return a context manager that emits standard FSM transition events."""
+        unit_id = unit_id or f"fsm:{transition}"
+        return RuntimeUnitSpan(
+            self,
+            unit_id=unit_id,
+            unit_type="fsm.transition",
+            parent_unit_id=parent_unit_id,
+            subject_type="fsm.transition",
+            subject_id=transition,
+            started_event_type=RuntimeEventType.FSM_TRANSITION_STARTED,
+            completed_event_type=RuntimeEventType.FSM_TRANSITION_COMPLETED,
+            failed_event_type=RuntimeEventType.FSM_TRANSITION_FAILED,
+            metadata=metadata,
+            payload={"transition": transition, "source": source, "target": target, **(payload or {})},
+            on_cancelled=on_cancelled,
+        )
+
+    def observe_transition(
+        self,
+        transition: str,
+        *,
+        source: str | None = None,
+        target: str | None = None,
+        unit_id: str | None = None,
+        parent_unit_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+        on_cancelled: Callable[[], bool] | None = None,
+    ) -> RuntimeUnitSpan:
+        """Compatibility alias for an FSM transition span."""
+        return self.observe_fsm_transition(
+            transition,
+            source=source,
+            target=target,
+            unit_id=unit_id,
+            parent_unit_id=parent_unit_id,
+            metadata=metadata,
+            payload=payload,
+            on_cancelled=on_cancelled,
         )
 
     def emit_error(
@@ -476,6 +644,9 @@ class RuntimeProcessContext:
         checkpoint_id: str | None = None,
         payload: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        subject_type: str = "process",
+        subject_id: str | None = None,
+        parent_subject_id: str | None = None,
     ) -> RuntimeEvent:
         event = RuntimeEvent(
             event_id=self._take_event_id(),
@@ -487,8 +658,9 @@ class RuntimeProcessContext:
             checkpoint_id=checkpoint_id or self.checkpoint_id,
             event_type=event_type,
             timestamp=time.time(),
-            subject_type="process",
-            subject_id=self.process_id,
+            subject_type=subject_type,
+            subject_id=subject_id or self.process_id,
+            parent_subject_id=parent_subject_id,
             status=status,
             status_class=status_class,
             progress=progress,
@@ -503,6 +675,122 @@ class RuntimeProcessContext:
         event_id = self._next_event_id
         self._next_event_id += 1
         return event_id
+
+
+class RuntimeUnitSpan:
+    """Context manager for one observable unit within a process attempt."""
+
+    def __init__(
+        self,
+        context: RuntimeProcessContext,
+        *,
+        unit_id: str,
+        unit_type: str | None = None,
+        parent_unit_id: str | None = None,
+        subject_type: str = "unit",
+        subject_id: str | None = None,
+        started_event_type: RuntimeEventType | str = RuntimeEventType.UNIT_STARTED,
+        completed_event_type: RuntimeEventType | str = RuntimeEventType.UNIT_COMPLETED,
+        failed_event_type: RuntimeEventType | str = RuntimeEventType.UNIT_FAILED,
+        cancelled_event_type: RuntimeEventType | str = RuntimeEventType.UNIT_CANCELLED,
+        metadata: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+        on_cancelled: Callable[[], bool] | None = None,
+    ) -> None:
+        self.context = context
+        self.unit_id = unit_id
+        self.unit_type = unit_type
+        self.parent_unit_id = parent_unit_id
+        self.subject_type = subject_type
+        self.subject_id = subject_id
+        self.started_event_type = started_event_type
+        self.completed_event_type = completed_event_type
+        self.failed_event_type = failed_event_type
+        self.cancelled_event_type = cancelled_event_type
+        self.metadata = metadata or {}
+        self.payload = payload or {}
+        self.on_cancelled = on_cancelled
+
+    def __enter__(self) -> RuntimeUnitSpan:
+        self.context.raise_if_cancelled()
+        self.context.emit_unit(
+            self.started_event_type,
+            self.unit_id,
+            unit_type=self.unit_type,
+            parent_unit_id=self.parent_unit_id,
+            subject_type=self.subject_type,
+            subject_id=self.subject_id,
+            status=RuntimeEventStatus.RUNNING,
+            status_class=RuntimeStatusClass.ACTIVE,
+            payload=self.payload,
+            metadata=self.metadata,
+        )
+        return self
+
+    def progress(
+        self,
+        current: float | int,
+        *,
+        total: float | int | None = None,
+        unit: str | None = None,
+        description: str | None = None,
+        status: RuntimeEventStatus | str = RuntimeEventStatus.RUNNING,
+        metadata: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> RuntimeEvent:
+        return self.context.emit_unit(
+            RuntimeEventType.UNIT_PROGRESSED,
+            self.unit_id,
+            unit_type=self.unit_type,
+            parent_unit_id=self.parent_unit_id,
+            subject_type=self.subject_type,
+            subject_id=self.subject_id,
+            status=status,
+            progress=RuntimeProgress(
+                current=current,
+                total=total,
+                unit=unit,
+                description=description,
+            ),
+            payload={**self.payload, **(payload or {})},
+            metadata={**self.metadata, **(metadata or {})},
+        )
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:
+        if exc_val is None:
+            self.context.raise_if_cancelled()
+            self.context.emit_unit(
+                self.completed_event_type,
+                self.unit_id,
+                unit_type=self.unit_type,
+                parent_unit_id=self.parent_unit_id,
+                subject_type=self.subject_type,
+                subject_id=self.subject_id,
+                status=RuntimeEventStatus.SUCCEEDED,
+                status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+                payload=self.payload,
+                metadata=self.metadata,
+            )
+            return False
+        cancelled = self.on_cancelled() if self.on_cancelled is not None else False
+        self.context.emit_unit(
+            self.cancelled_event_type if cancelled else self.failed_event_type,
+            self.unit_id,
+            unit_type=self.unit_type,
+            parent_unit_id=self.parent_unit_id,
+            subject_type=self.subject_type,
+            subject_id=self.subject_id,
+            status=RuntimeEventStatus.CANCELLED if cancelled else RuntimeEventStatus.FAILED,
+            status_class=(
+                RuntimeStatusClass.TERMINAL_CANCELLED
+                if cancelled
+                else RuntimeStatusClass.TERMINAL_FAILURE
+            ),
+            error=exc_val,
+            payload=self.payload,
+            metadata=self.metadata,
+        )
+        return False
 
 
 class RuntimeProcess(Protocol):

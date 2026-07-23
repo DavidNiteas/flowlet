@@ -11,8 +11,9 @@ from typing import Any, Generic, TypeVar
 from pydantic import BaseModel, Field
 
 from .info import RuntimeFileLayout
-from .process import RuntimeProcessSpec
+from .process import RuntimeProcessSpec, RuntimeProcessState, RuntimeUnitState
 from .projection import RuntimeProjection, load_runtime_projection
+from .recovery import RuntimeProcessAttempt
 from .store import RuntimeStore
 
 StatusT = TypeVar("StatusT")
@@ -41,6 +42,21 @@ class RuntimeObservation(BaseModel):
     def is_available(self) -> bool:
         """Return whether the directory has any standard observation artifact."""
         return self.projection is not None or bool(self.process_specs)
+
+    @property
+    def processes(self) -> dict[str, RuntimeProcessState]:
+        """Return projected process states without requiring a business monitor."""
+        return self.projection.processes if self.projection is not None else {}
+
+    @property
+    def units(self) -> dict[str, RuntimeUnitState]:
+        """Return projected observable units without requiring a business monitor."""
+        return self.projection.units if self.projection is not None else {}
+
+    @property
+    def attempts(self) -> dict[str, RuntimeProcessAttempt]:
+        """Return projected process attempts without requiring a business monitor."""
+        return self.projection.attempts if self.projection is not None else {}
 
 
 def load_runtime_observation(runtime_dir: str | Path, *, runtime_id: str) -> RuntimeObservation:

@@ -535,6 +535,11 @@ class RuntimeDurableStore:
             raise RuntimeError(f"Attempt disappeared during transition: {attempt_id!r}")
         return finished
 
+    def load_process_attempt(self, attempt_id: str) -> RuntimeProcessAttempt | None:
+        """Load one persisted process attempt by id."""
+        with self._connect() as connection:
+            return self._load_attempt_tx(connection, attempt_id)
+
     def reserve_command(
         self,
         *,

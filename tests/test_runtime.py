@@ -8,8 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from flowlet.fsm import StateMachineSpec, TransitionSpec
 from flowlet.runtime import (
+    CallableRuntimeProcess,
     EventBuffer,
+    FSMRuntimeProcess,
     RuntimeAttemptStateError,
     RuntimeBackendExecutor,
     RuntimeBackendSessionStatus,
@@ -24,6 +27,7 @@ from flowlet.runtime import (
     RuntimeDurableStore,
     RuntimeErrorInfo,
     RuntimeEvent,
+    RuntimeEventChannel,
     RuntimeEventJsonlStore,
     RuntimeEventSidecarWriter,
     RuntimeEventStatus,
@@ -69,6 +73,7 @@ from flowlet.runtime import (
     RuntimeSnapshotLoader,
     RuntimeStatusClass,
     RuntimeStore,
+    RuntimeUnitState,
     RuntimeUnsupportedOperationError,
     build_runtime_process_graph,
     list_runtime_artifacts,
@@ -111,6 +116,152 @@ def test_runtime_info_payload_is_json_safe(tmp_path):
     assert restored.runtime_files.runtime_events == "runtime/events.runtime.jsonl"
     assert restored.runtime_files.durable_database == "runtime/runtime.db"
     assert restored.runtime_files.processes == "runtime/processes.json"
+
+
+def test_runtime_process_context_observe_unit_does_not_mutate_process_state():
+    store = RuntimeEventJsonlStore()
+    context = RuntimeProcessContext(
+        runtime_id="runtime-1",
+        process_id="process-1",
+        event_store=store,
+    )
+
+    context.emit_status(RuntimeEventStatus.RUNNING)
+    with context.observe_unit("unit-1", unit_type="common.step") as unit:
+        unit.progress(1, total=2)
+    context.emit_status(RuntimeEventStatus.SUCCEEDED, payload={"result": {"ok": True}})
+
+    projection = RuntimeFrameworkReducer().reduce(store.list())
+
+    assert projection.processes["process-1"].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert projection.processes["process-1"].result == {"ok": True}
+    assert projection.units["unit-1"].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert projection.units["unit-1"].unit_type == "common.step"
+    assert projection.units["unit-1"].event_count == 3
+    assert isinstance(projection.units["unit-1"], RuntimeUnitState)
+    assert "unit-1" not in projection.processes
+
+
+def test_runtime_projection_keeps_distinct_fsm_transition_units():
+    store = RuntimeEventJsonlStore()
+    context = RuntimeProcessContext(
+        runtime_id="runtime-1",
+        process_id="process-1",
+        event_store=store,
+    )
+
+    context.emit_unit(
+        RuntimeEventType.FSM_TRANSITION_COMPLETED,
+        "fsm:advance:1",
+        unit_type="fsm.transition",
+        subject_type="fsm.transition",
+        subject_id="advance",
+        status=RuntimeEventStatus.SUCCEEDED,
+        status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+    )
+    context.emit_unit(
+        RuntimeEventType.FSM_TRANSITION_COMPLETED,
+        "fsm:advance:2",
+        unit_type="fsm.transition",
+        subject_type="fsm.transition",
+        subject_id="advance",
+        status=RuntimeEventStatus.SUCCEEDED,
+        status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+    )
+
+    projection = RuntimeFrameworkReducer().reduce(store.list())
+
+    assert sorted(projection.units) == ["fsm:advance:1", "fsm:advance:2"]
+    assert projection.processes == {}
+
+
+def test_runtime_process_attempt_reporter_context_emits_units(tmp_path):
+    identity = RuntimeIdentity(
+        runtime_id="runtime-1",
+        logical_task_id="task-1",
+        generation=1,
+        created_at=1.0,
+    )
+    store = RuntimeDurableStore.create(tmp_path / "runtime.db", identity)
+    execution = store.begin_execution(
+        execution_id="execution-1",
+        kind=RuntimeExecutionKind.INITIAL,
+        created_at=2.0,
+        backend_session_id="session-1",
+    )
+    reporter = RuntimeProcessAttemptReporter(
+        store,
+        execution_id=execution.execution_id,
+        backend_session_id="session-1",
+    )
+    reporter.declare(RuntimeProcessSpec(process_id="process-1", process_type="common.process"), timestamp=3.0)
+    attempt = reporter.start("process-1", timestamp=4.0)
+
+    context = reporter.context(attempt)
+    with context.observe_unit("unit-1", unit_type="common.unit"):
+        pass
+    reporter.complete(attempt.attempt_id, result={"ok": True}, timestamp=5.0)
+
+    projection = RuntimeFrameworkReducer().reduce(store.list())
+
+    assert projection.attempts[attempt.attempt_id].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert projection.units["unit-1"].process_id == "process-1"
+    assert projection.units["unit-1"].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+
+
+def test_runtime_event_channel_drains_standard_events():
+    channel = RuntimeEventChannel.local()
+    proxy = channel.proxy()
+    context = proxy.context_for(runtime_id="runtime-1", process_id="process-1")
+    context.emit_log("started")
+    with context.observe_unit("unit-1"):
+        pass
+
+    target = RuntimeEventJsonlStore()
+    drained = channel.drain_into(target)
+
+    assert drained == 3
+    projection = RuntimeFrameworkReducer().reduce(target.list())
+    assert projection.units["unit-1"].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+
+
+def test_callable_runtime_process_wrapper_runs():
+    store = RuntimeEventJsonlStore()
+    executor = RuntimeBackendExecutor(runtime_id="runtime-1", event_store=store)
+    process = CallableRuntimeProcess(
+        RuntimeProcessSpec(process_id="process-1", process_type="callable"),
+        lambda value: {"value": value + 1},
+        args=(1,),
+    )
+    executor.register(process)
+
+    assert executor.run_process("process-1") == {"value": 2}
+    projection = RuntimeFrameworkReducer().reduce(store.list())
+    assert projection.processes["process-1"].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+
+
+def test_fsm_runtime_process_wrapper_emits_transition_units():
+    store = RuntimeEventJsonlStore()
+    executor = RuntimeBackendExecutor(runtime_id="runtime-1", event_store=store)
+    spec = StateMachineSpec.create(
+        initial="new",
+        terminal={"done"},
+        transitions=[TransitionSpec("finish", "new", "done")],
+    )
+    process = FSMRuntimeProcess(
+        RuntimeProcessSpec(process_id="process-1", process_type="fsm"),
+        spec,
+        backend="thread",
+    )
+    executor.register(process)
+
+    result = executor.run_process("process-1")
+    projection = RuntimeFrameworkReducer().reduce(store.list())
+
+    assert result["state"] == "done"
+    assert projection.processes["process-1"].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
+    assert projection.units["fsm:finish:1"].subject_type == "fsm.transition"
+    assert projection.units["fsm:finish:1"].status_class == RuntimeStatusClass.TERMINAL_SUCCESS
 
 
 def test_durable_runtime_store_preserves_identity_and_continuation_ledger(tmp_path):
@@ -632,7 +783,18 @@ def test_load_runtime_observation_reads_only_framework_artifacts(tmp_path):
     runtime_dir = tmp_path / "runtime"
     store = RuntimeStore(runtime_dir)
     store.write_process_specs([RuntimeProcessSpec(process_id="process1", process_type="example.process")])
-    store.write_projection(RuntimeProjection(runtime_id="runtime1").model_dump(mode="json"))
+    store.write_projection(
+        RuntimeProjection(
+            runtime_id="runtime1",
+            units={
+                "unit1": RuntimeUnitState(
+                    unit_id="unit1",
+                    process_id="process1",
+                    status_class=RuntimeStatusClass.TERMINAL_SUCCESS,
+                )
+            },
+        ).model_dump(mode="json")
+    )
 
     observation = load_runtime_observation(runtime_dir, runtime_id="business-id")
 
@@ -640,6 +802,9 @@ def test_load_runtime_observation_reads_only_framework_artifacts(tmp_path):
     assert observation.runtime_id == "business-id"
     assert observation.projection is not None
     assert observation.process_specs[0].process_type == "example.process"
+    assert observation.units["unit1"].process_id == "process1"
+    assert observation.processes == {}
+    assert observation.attempts == {}
     assert observation.is_available()
 
 

@@ -7,7 +7,12 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from .process import RuntimeProcessOperation, RuntimeProcessState, RuntimeResourceUsage
+from .process import (
+    RuntimeProcessOperation,
+    RuntimeProcessState,
+    RuntimeResourceUsage,
+    RuntimeUnitState,
+)
 from .recovery import RuntimeCheckpointRef, RuntimeProcessAttempt
 from .schema import (
     RuntimeErrorInfo,
@@ -30,9 +35,12 @@ class RuntimeProjection(BaseModel):
     processes: dict[str, RuntimeProcessState] = Field(default_factory=dict)
     attempts: dict[str, RuntimeProcessAttempt] = Field(default_factory=dict)
     process_attempt_ids: dict[str, list[str]] = Field(default_factory=dict)
+    units: dict[str, RuntimeUnitState] = Field(default_factory=dict)
+    unit_event_ids: dict[str, list[str]] = Field(default_factory=dict)
     checkpoints: dict[str, RuntimeCheckpointRef] = Field(default_factory=dict)
     latest_checkpoint_by_process: dict[str, str] = Field(default_factory=dict)
     active_process_ids: list[str] = Field(default_factory=list)
+    active_unit_ids: list[str] = Field(default_factory=list)
     terminal_success_count: int = 0
     terminal_failure_count: int = 0
     terminal_cancelled_count: int = 0
@@ -102,6 +110,7 @@ class RuntimeFrameworkReducer:
             _apply_attempt_event(updated, event)
             _apply_checkpoint_event(updated, event)
             _apply_process_event(updated, event)
+            _apply_unit_event(updated, event)
             _apply_runtime_event(updated, event)
             _apply_indexes(updated, event)
         _finalize_projection(updated, self.policy)
@@ -129,6 +138,8 @@ def load_runtime_projection(path: str | Path) -> RuntimeProjection | None:
 
 def _apply_process_event(projection: RuntimeProjection, event: RuntimeEvent) -> None:
     if event.process_id is None:
+        return
+    if event.subject_type in {"unit", "fsm.transition"}:
         return
     state = projection.event_processes.get(event.process_id)
     if state is None:
@@ -177,6 +188,54 @@ def _apply_process_event(projection: RuntimeProjection, event: RuntimeEvent) -> 
         update["result"] = result if isinstance(result, dict) else {"value": result}
     state = state.model_copy(update=update)
     projection.event_processes[event.process_id] = state
+
+
+def _apply_unit_event(projection: RuntimeProjection, event: RuntimeEvent) -> None:
+    if event.subject_type not in {"unit", "fsm.transition"}:
+        return
+    unit_id = event.payload.get("unit_id") or event.subject_id
+    if not isinstance(unit_id, str) or not unit_id.strip():
+        return
+    state = projection.units.get(unit_id)
+    if state is None:
+        projection.unit_event_ids.setdefault(unit_id, [])
+        state = RuntimeUnitState(
+            unit_id=unit_id,
+            unit_type=event.payload.get("unit_type"),
+            process_id=event.process_id,
+            parent_process_id=event.parent_process_id,
+            parent_unit_id=event.parent_subject_id,
+            subject_type=event.subject_type,
+            subject_id=event.subject_id,
+        )
+    update: dict[str, Any] = {
+        "process_id": event.process_id or state.process_id,
+        "parent_process_id": event.parent_process_id or state.parent_process_id,
+        "parent_unit_id": event.parent_subject_id or state.parent_unit_id,
+        "unit_type": event.payload.get("unit_type") or state.unit_type,
+        "subject_type": event.subject_type or state.subject_type,
+        "subject_id": event.subject_id or state.subject_id,
+        "status": event.status or state.status,
+        "status_class": event.status_class or state.status_class,
+        "event_count": state.event_count + 1,
+    }
+    if event.status_class == RuntimeStatusClass.ACTIVE:
+        update["started_at"] = state.started_at or event.timestamp
+    if event.status_class in {
+        RuntimeStatusClass.TERMINAL_SUCCESS,
+        RuntimeStatusClass.TERMINAL_FAILURE,
+        RuntimeStatusClass.TERMINAL_CANCELLED,
+    }:
+        update["finished_at"] = event.timestamp
+    if event.progress is not None:
+        update["progress"] = event.progress
+    if "result" in event.payload and isinstance(event.payload["result"], dict):
+        update["result"] = event.payload["result"]
+    if event.error is not None:
+        update["error"] = event.error
+    update["updated_at"] = event.timestamp
+    projection.units[unit_id] = state.model_copy(update=update)
+    projection.unit_event_ids[unit_id].append(str(event.event_id))
 
 
 _ATTEMPT_EVENT_STATE: dict[str, tuple[RuntimeEventStatus, RuntimeStatusClass]] = {
@@ -330,6 +389,11 @@ def _finalize_projection(projection: RuntimeProjection, policy: RuntimeProjectio
     projection.active_process_ids = sorted(
         process_id
         for process_id, state in projection.processes.items()
+        if state.status_class == RuntimeStatusClass.ACTIVE
+    )
+    projection.active_unit_ids = sorted(
+        unit_id
+        for unit_id, state in projection.units.items()
         if state.status_class == RuntimeStatusClass.ACTIVE
     )
     projection.terminal_success_count = _count_processes(projection, RuntimeStatusClass.TERMINAL_SUCCESS)
