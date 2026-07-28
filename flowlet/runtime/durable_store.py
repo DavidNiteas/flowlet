@@ -7,6 +7,8 @@ import json
 import sqlite3
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -1319,12 +1321,24 @@ class RuntimeDurableStore:
                 """
             )
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.database_path, timeout=30.0)
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=FULL")
-        connection.execute("PRAGMA foreign_keys=ON")
-        return connection
+        try:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=FULL")
+            connection.execute("PRAGMA foreign_keys=ON")
+            try:
+                yield connection
+            except Exception:
+                if connection.in_transaction:
+                    connection.rollback()
+                raise
+            else:
+                if connection.in_transaction:
+                    connection.commit()
+        finally:
+            connection.close()
 
 
 def _numeric_cursor(cursor: RuntimeEventCursor | None) -> int | None:

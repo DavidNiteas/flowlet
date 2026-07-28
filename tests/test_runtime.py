@@ -315,6 +315,19 @@ def test_durable_runtime_store_preserves_identity_and_continuation_ledger(tmp_pa
         store.transition_execution("execution-1", RuntimeExecutionStatus.RUNNING, timestamp=7.0)
 
 
+def test_durable_runtime_store_connect_closes_connection(tmp_path):
+    identity = RuntimeIdentity(runtime_id="runtime-1", generation=1, created_at=1.0)
+    store = RuntimeDurableStore.create(tmp_path / "runtime.db", identity)
+
+    with store._connect() as connection:
+        assert connection.execute("SELECT 1").fetchone() == (1,)
+
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        connection.execute("SELECT 1")
+
+    assert RuntimeDurableStore(store.database_path, expected_runtime_id="runtime-1").identity() == identity
+
+
 def test_durable_runtime_store_allocates_unique_sequences_across_writers(tmp_path):
     database_path = tmp_path / "runtime.db"
     RuntimeDurableStore.create(
