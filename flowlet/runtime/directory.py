@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import shutil
+import sqlite3
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -28,7 +28,7 @@ class RuntimeDirectoryManager:
         self.runtime_dir = Path(runtime_dir)
         self.layout = layout or RuntimeFileLayout()
         self.control_dir = self.runtime_dir / ".control"
-        self.lock_path = self.control_dir / "reset.lock"
+        self.lock_path = self.control_dir / "reset_lock.sqlite"
         self.marker_path = self.control_dir / "reset.json"
 
     @property
@@ -163,12 +163,44 @@ class RuntimeDirectoryManager:
     @contextmanager
     def _exclusive_lock(self) -> Iterator[None]:
         self.control_dir.mkdir(parents=True, exist_ok=True)
-        with self.lock_path.open("a+b") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        with _sqlite_exclusive_lock(self.lock_path):
+            yield
+
+
+@contextmanager
+def _sqlite_exclusive_lock(path: Path) -> Iterator[None]:
+    connection = sqlite3.connect(path, isolation_level=None, timeout=0.0)
+    try:
+        _acquire_sqlite_exclusive_lock(connection)
+        try:
+            yield
+        finally:
+            connection.rollback()
+    finally:
+        connection.close()
+
+
+def _acquire_sqlite_exclusive_lock(connection: sqlite3.Connection) -> None:
+    while not _try_acquire_sqlite_exclusive_lock(connection):
+        time.sleep(0.05)
+
+
+def _try_acquire_sqlite_exclusive_lock(connection: sqlite3.Connection) -> bool:
+    try:
+        connection.execute("BEGIN EXCLUSIVE")
+    except sqlite3.OperationalError as exc:
+        if not _is_sqlite_lock_error(exc):
+            raise
+        return False
+    return True
+
+
+def _is_sqlite_lock_error(exc: sqlite3.OperationalError) -> bool:
+    error_code = getattr(exc, "sqlite_errorcode", None)
+    if error_code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+        return True
+    message = str(exc).lower()
+    return "locked" in message or "busy" in message
 
 
 def _validate_rerun_identity(current: RuntimeIdentity, new: RuntimeIdentity) -> None:
@@ -187,6 +219,8 @@ def _validate_rerun_identity(current: RuntimeIdentity, new: RuntimeIdentity) -> 
 
 
 def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        return
     descriptor = os.open(path, os.O_RDONLY)
     try:
         os.fsync(descriptor)
